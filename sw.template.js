@@ -1,8 +1,9 @@
 /* Caixa do Motorista — faz o app abrir sem internet.
-   Páginas e arquivos do app: tenta a rede primeiro (para pegar a versão nova) e usa a cópia guardada se estiver sem sinal.
-   Fontes e biblioteca de PDF (de fora): usa a cópia guardada e atualiza por trás. */
-const VERSAO = "cm-a01c2b258b";
-const APP = ["./", "./index.html", "./local.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
+   Arquivos do app (e os preços da ANP): tenta a rede primeiro, para pegar a versão nova, e usa a cópia guardada se estiver sem sinal.
+   Fontes e biblioteca de PDF (de fora): usa a cópia guardada e atualiza por trás.
+   Tabela FIPE e Sentry não passam por aqui: só funcionam com internet. */
+const VERSAO = "cm-__VERSAO__";
+const APP = ["./", "./index.html", "./local.js", "./config.js", "./qrcode.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(APP)).then(() => self.skipWaiting()));
@@ -20,12 +21,13 @@ self.addEventListener("fetch", (e) => {
   if (url.origin === location.origin) {
     e.respondWith((async () => {
       const cache = await caches.open(VERSAO);
+      const chave = req.mode === "navigate" ? "./index.html" : req;
       try {
         const r = await comPrazo(fetch(req), 4000);
-        if (r && r.ok) cache.put(req.mode === "navigate" ? "./index.html" : req, r.clone());
+        if (r && r.ok) cache.put(chave, r.clone());
         return r;
       } catch (err) {
-        const guardada = await cache.match(req.mode === "navigate" ? "./index.html" : req, { ignoreSearch: true });
+        const guardada = await cache.match(chave, { ignoreSearch: true });
         if (guardada) return guardada;
         throw err;
       }

@@ -1,0 +1,12 @@
+{
+  "name": "caixa-do-motorista",
+  "private": true,
+  "description": "App grátis para motorista de aplicativo. Os testes rodam sozinhos no GitHub.",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0"
+  }
+}

@@ -1,19 +1,5 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Ganhos, gastos, combustível e manutenção do carro para motoristas de aplicativo.">
-<meta name="theme-color" content="#EDF0EC" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E1311" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon-192.png" type="image/png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Caixa Motorista">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Caixa do Motorista</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
@@ -286,6 +272,15 @@ td:first-child { text-transform: capitalize; }
 .fld { display: grid; gap: 5px; min-width: 0; }
 .fld > span { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .fld input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
+.fld select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
+.fld select:disabled { opacity: .6; }
+.txt-g { color: var(--ganho); }
+.txt-x { color: var(--gasto); }
+.qr { display: grid; grid-template-columns: 136px minmax(0, 1fr); gap: 14px; align-items: center; }
+.qr-box { background: #FFFFFF; border-radius: 12px; padding: 6px; width: 136px; height: 136px; }
+.qr-box svg { display: block; width: 100%; height: 100%; }
+.qr-link { margin: 6px 0 8px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 360px) { .qr { grid-template-columns: 1fr; } }
 .money { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 4px 14px; }
 .money em { font: 600 22px/1 var(--f-disp); font-style: normal; color: var(--muted); }
 .money input { border: 0; background: transparent; font: 700 34px/1.2 var(--f-disp); padding: 6px 0; width: 100%; min-width: 0; outline: none; }
@@ -303,9 +298,6 @@ td:first-child { text-transform: capitalize; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 26px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgb(0 0 0 / .2); }
 @media (max-width: 380px) { .lucro { font-size: 40px; } .month b { min-width: 96px; } .brand { font-size: 17px; } }
 </style>
-</head>
-<body>
-
 
 <header class="top">
   <div class="brand"><i></i><span>Caixa do Motorista</span></div>
@@ -340,7 +332,6 @@ td:first-child { text-transform: capitalize; }
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="local.js"></script>
 <script>
 (() => {
   // ---------- constantes ----------
@@ -377,7 +368,7 @@ td:first-child { text-transform: capitalize; }
     base: null, local: false, settings: {}, lanc: [], dias: [], manut: [],
     loaded: { s: false, l: false, d: false, m: false },
     ym: null, tab: "inicio", offline: false, sample: null, canImg: false, downloads: null,
-    carroSub: "consumo", cmp: {}, hist: [], docs: [], cars: [], seps: [], dia: null,
+    carroSub: "consumo", cmp: {}, anp: null, hist: [], docs: [], cars: [], seps: [], dia: null,
   };
 
   // ---------- utilidades ----------
@@ -445,7 +436,10 @@ td:first-child { text-transform: capitalize; }
     const t = $("#toast"); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 3200);
   }
+  // Sentry (só no app publicado, se você colocar o DSN em config.js): manda o erro para você ver
+  const reportar = (e) => { try { if (window.Sentry && typeof window.Sentry.captureException === "function") window.Sentry.captureException(e); } catch (x) { /* nada */ } };
   function dbErrMsg(e) {
+    reportar(e);
     if (e && e.code === "quota_exceeded") return "O espaço de dados encheu. Apague lançamentos antigos para continuar.";
     return "Não foi possível salvar. Confira a conexão e tente de novo.";
   }
@@ -886,7 +880,7 @@ td:first-child { text-transform: capitalize; }
   // ----- qual combustível compensa -----
   // Custo por km de cada combustível = preço ÷ km por litro medido no seu carro.
   // Sem medição de um deles, etanol e gasolina se estimam um pelo outro (etanol rende ~70% da gasolina).
-  function opcoesComb(car, precos = S.cmp) {
+  function opcoesComb(car, precos = S.cmp, usarAnp = true) {
     const fd = fuelData(car.id);
     const usados = new Set(fd.all.map((f) => f.comb).filter(Boolean));
     const base = !car.combustivel || car.combustivel === "Flex" ? ["Gasolina", "Etanol"] : car.combustivel === "GNV" ? ["GNV", "Gasolina"] : [car.combustivel];
@@ -896,7 +890,7 @@ td:first-child { text-transform: capitalize; }
       if (!kml && comb === "Etanol" && fd.kmlPor.Gasolina) { kml = fd.kmlPor.Gasolina * 0.7; est = true; }
       if (!kml && comb === "Gasolina" && fd.kmlPor.Etanol) { kml = fd.kmlPor.Etanol / 0.7; est = true; }
       const raw = precos[comb];
-      const p = raw != null && raw !== "" ? parseValor(raw) : fd.precoUlt[comb] || null;
+      const p = raw != null && raw !== "" ? parseValor(raw) : fd.precoUlt[comb] || (usarAnp ? anpMedio(comb) : null) || null;
       return { comb, kml, est, preco: p > 0 ? p : null, custoKm: p > 0 && kml ? p / kml : null, unid: comb === "GNV" ? "m³" : "L" };
     });
     const validos = ops.filter((o) => o.custoKm).sort((a, b) => a.custoKm - b.custoKm);
@@ -925,7 +919,7 @@ td:first-child { text-transform: capitalize; }
   function calcHTML(car) {
     const r = opcoesComb(car);
     return `<div class="calc" data-calccar="${esc(car.id)}">
-      <div class="calc-in">${r.ops.map((o) => `<label class="fld"><span>${o.comb} (R$/${o.unid})</span><input data-pc="${esc(o.comb)}" inputmode="decimal" placeholder="Preço no posto" value="${esc(S.cmp[o.comb] ?? (r.fd.precoUlt[o.comb] ? num(r.fd.precoUlt[o.comb], 2) : ""))}"></label>`).join("")}</div>
+      <div class="calc-in">${r.ops.map((o) => { const cid = !r.fd.precoUlt[o.comb] && anpMedio(o.comb); return `<label class="fld"><span>${o.comb} (R$/${o.unid})${S.cmp[o.comb] == null && cid ? " · média da cidade" : ""}</span><input data-pc="${esc(o.comb)}" inputmode="decimal" placeholder="Preço no posto" value="${esc(S.cmp[o.comb] ?? (r.fd.precoUlt[o.comb] ? num(r.fd.precoUlt[o.comb], 2) : cid ? num(cid, 2) : ""))}"></label>`; }).join("")}</div>
       <div class="calc-out">${calcOutHTML(car)}</div></div>`;
   }
   function sepForm(x = null) {
@@ -976,7 +970,7 @@ td:first-child { text-transform: capitalize; }
       fixos += ((Number(c.parcelaMes) || 0) + (Number(c.outrosMes) || 0)) / DM;
       const temUso = rk || S.lanc.some((x) => cid(x) === car.id);
       if (!temUso) continue;
-      const mc = opcoesComb(car, {}); // preços que você pagou (a calculadora não mexe na previsão)
+      const mc = opcoesComb(car, {}, false); // só preços que você pagou (a calculadora e a ANP não mexem na previsão)
       const fd = mc.fd;
       const ck = mc.melhor ? mc.melhor.custoKm : fd.precoMedio && fd.media ? fd.precoMedio / fd.media : null;
       if (rk && ck) {
@@ -1115,6 +1109,7 @@ td:first-child { text-transform: capitalize; }
           ? `<div class="card"><div class="sec-h"><h2>Km por litro a cada tanque</h2><div class="legend"><span><i style="background:var(--gas)"></i>Gasolina</span>${temEta ? `<span><i style="background:var(--eta)"></i>Etanol</span>` : ""}<span><b class="dash"></b>Média</span></div></div>${chartKml(fd)}</div>`
           : `<div class="empty"><b>Sua média por litro aparece aqui</b><span>Ao abastecer, encha o tanque e anote os litros e o KM do painel. A partir do segundo abastecimento o app calcula quantos km o carro faz por litro.</span><button class="btn sm primary" id="addAbast"${off}>Anotar abastecimento</button></div>`}
         ${showCmp ? `<div class="card"><div class="sec-h"><h2>Qual combustível colocar?</h2></div>${calcHTML(car)}</div>` : ""}
+        ${anpCardHTML()}
         ${postosHTML}
         ${abastHTML}`;
     } else if (sub === "custos") {
@@ -1126,7 +1121,8 @@ td:first-child { text-transform: capitalize; }
           ${cr.mensal ? `<p class="note" style="margin:0">Cerca de <b class="num">${brl(cr.mensal)}</b> por mês, rodando ${num(cr.kmMes)} km (${cr.fonte}).</p>` : `<p class="note" style="margin:0">Anote abastecimentos com KM ou informe quantos km roda por mês para a conta sair.</p>`}
           <div class="bars">${cr.partes.map(([n, v]) => `<div class="bar-row"><span>${n}</span><span class="num">${v == null ? "—" : brl(v) + "/km"}</span><div class="track"><i style="width:${cr.total > 0 && v ? (v / cr.total) * 100 : 0}%;background:var(--ink)"></i></div></div>`).join("")}</div>
           ${!cr.temFixos ? `<p class="note" style="margin:0">Falta informar seguro, IPVA, parcela e o valor do carro. Sem eles o custo parece menor do que é.</p>` : ""}
-          <div><button class="btn sm ghost" id="editCustos"${off}>Editar custos fixos</button></div>
+          ${car.fipe && car.fipe.valor ? `<p class="note" style="margin:0">Tabela FIPE (${esc(car.fipe.mes || "")}): <b class="num">${brl(car.fipe.valor)}</b>${car.fipe.desval != null ? `, perdeu ${num(car.fipe.desval, 1)}% em 12 meses` : ""}. O app atualiza sozinho todo mês.</p>` : ""}
+          <div class="btn-row"><button class="btn sm ghost" id="editCustos"${off}>Editar custos fixos</button>${S.local ? `<button class="btn sm ghost" id="fipeBtn"${off}>${car.fipe ? "Tabela FIPE" : "Buscar valor na FIPE"}</button>` : ""}</div>
         </div>
         ${cr.total > 0 && s.kmPass > 0 ? `<p class="note">Em ${mes} você ganhou ${brl(s.trabPass / s.kmPass)} por km com passageiro. Cada km rodado custa ${brl(cr.total)}, contando também os km vazios.</p>` : ""}
         <div class="card"><div class="sec-h"><h2>Caixinha do carro</h2><small>calculada sozinha</small></div>
@@ -1198,8 +1194,247 @@ td:first-child { text-transform: capitalize; }
       await col("manutencao").add(d);
     }
   }
+  // ----- preço médio da ANP (robô do GitHub baixa toda semana para dados/anp.json) -----
+  // Nomes de cidade e estado comparados sem acento e em minúsculas.
+  const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  function anpLocal() {
+    const a = S.anp, c = S.settings.cidade;
+    if (!a || !c || !c.uf) return null;
+    const ant = a.anterior || {};
+    const m = c.chave && a.municipios ? a.municipios[c.chave] : null;
+    if (m) return { nome: m.nome + "/" + m.uf, precos: m.precos || {}, antes: (ant.municipios || {})[c.chave] || null, cidade: true };
+    const e = a.estados ? a.estados[c.uf] : null;
+    if (e) return { nome: e.nome || c.uf, precos: e.precos || {}, antes: (ant.estados || {})[c.uf] || null, cidade: false };
+    return null;
+  }
+  const anpMedio = (comb) => { const l = anpLocal(); const p = l && l.precos[comb]; return p && p.medio > 0 ? Number(p.medio) : null; };
+  const unidade = (comb) => (comb === "GNV" ? "m³" : "L");
+  function anpCardHTML() {
+    if (!S.anp) return "";
+    const l = anpLocal();
+    const sem = S.anp.semana && S.anp.semana.inicio ? "semana de " + dBR(S.anp.semana.inicio).slice(0, 5) + " a " + dBR(S.anp.semana.fim).slice(0, 5) : "";
+    if (!l) {
+      return `<div class="card"><div class="sec-h"><h2>Preço na sua cidade</h2></div>
+        <p class="note" style="margin:0">Compare o que você paga com a média da sua cidade, pela pesquisa semanal de preços da ANP.</p>
+        <div><button class="btn sm primary" id="cidadeBtn"${S.offline ? " disabled" : ""}>Escolher cidade</button></div></div>`;
+    }
+    // o que você pagou nos últimos 30 dias, por combustível
+    const lim = dStr(new Date(Date.now() - 30 * 864e5));
+    const meus = {};
+    S.lanc.filter((x) => x.cat === "Combustível" && x.litros > 0 && x.comb && (x.data || "") >= lim).forEach((x) => {
+      const m = meus[x.comb] || (meus[x.comb] = { v: 0, l: 0 });
+      m.v += Number(x.valor) || 0; m.l += Number(x.litros) || 0;
+    });
+    const linhas = COMBS.filter((c) => l.precos[c] && l.precos[c].medio > 0).map((c) => {
+      const p = l.precos[c], ant = l.antes ? Number(l.antes[c]) : 0, dif = ant > 0 ? p.medio - ant : null;
+      const eu = meus[c] && meus[c].l > 0 ? meus[c].v / meus[c].l : null;
+      const pct = eu ? (eu / p.medio - 1) * 100 : null;
+      const faixa = p.min > 0 && p.max > 0 ? "de " + brl(p.min) + " a " + brl(p.max) : "";
+      const mov = dif != null && Math.abs(dif) >= 0.005 ? (dif > 0 ? "subiu " : "caiu ") + brl(Math.abs(dif)) + " na semana" : "";
+      return `<div class="split"><span><b>${c}</b><br><small>${[faixa, mov].filter(Boolean).join(" · ")}</small>${eu ? `<br><small>Você pagou ${brl(eu)}: <b class="${pct <= 0 ? "txt-g" : "txt-x"}">${num(Math.abs(pct), 1)}% ${pct <= 0 ? "abaixo" : "acima"}</b> da média</small>` : ""}</span><b class="num">${brl(p.medio)}/${unidade(c)}</b></div>`;
+    }).join("");
+    return `<div class="card"><div class="sec-h"><h2>Média em ${esc(l.nome)}</h2><small>${sem}</small></div>
+      <div class="bars">${linhas || `<p class="note" style="margin:0">Sem preços desta semana para este lugar.</p>`}</div>
+      <p class="note" style="margin:0">${l.cidade ? "" : "Sua cidade não entra na pesquisa da ANP, então esta é a média do estado. "}Fonte: ANP, pesquisa semanal de preços. O seu preço é a média do que pagou nos últimos 30 dias.</p>
+      <div><button class="btn sm ghost" id="cidadeBtn"${S.offline ? " disabled" : ""}>Trocar cidade</button></div></div>`;
+  }
+  function cidadeForm() {
+    const a = S.anp;
+    if (!a) return;
+    const c = S.settings.cidade || {};
+    const F = { uf: c.uf || "", chave: c.chave || "" };
+    const ufs = Object.keys(a.estados || {}).sort((x, y) => String(a.estados[x].nome || x).localeCompare(String(a.estados[y].nome || y), "pt-BR"));
+    openForm(() => {
+      const cidades = Object.entries(a.municipios || {}).filter(([, m]) => m.uf === F.uf).sort((x, y) => String(x[1].nome).localeCompare(String(y[1].nome), "pt-BR"));
+      return `
+      <div><h2>Sua cidade</h2><p class="note">A ANP pesquisa o preço dos combustíveis toda semana nas principais cidades do país. Se a sua não estiver na lista, o app usa a média do estado.</p></div>
+      <label class="fld"><span>Estado</span><select id="cdUf"><option value="">Escolha o estado</option>${ufs.map((u) => `<option value="${esc(u)}"${u === F.uf ? " selected" : ""}>${esc(a.estados[u].nome || u)}</option>`).join("")}</select></label>
+      ${F.uf ? `<label class="fld"><span>Cidade</span><select id="cdCid"><option value="">Minha cidade não está aqui (usar o estado)</option>${cidades.map(([k, m]) => `<option value="${esc(k)}"${k === F.chave ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select></label>` : ""}
+      <p class="err" id="fErr"></p>
+      <div class="sh-actions"><button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${F.uf && !S.offline ? "" : " disabled"}>Salvar</button></div>`;
+    }, (draw, b) => {
+      b.querySelector("#fCancel").onclick = closeSheet;
+      const su = b.querySelector("#cdUf"), sc = b.querySelector("#cdCid");
+      su.onchange = () => { F.uf = su.value; F.chave = ""; draw(); };
+      if (sc) sc.onchange = () => { F.chave = sc.value; };
+      b.querySelector("#fSave").onclick = async (ev) => {
+        const m = F.chave && a.municipios ? a.municipios[F.chave] : null;
+        ev.target.disabled = true;
+        try {
+          await saveSettings({ cidade: { uf: F.uf, chave: m ? F.chave : null, nome: m ? m.nome : (a.estados[F.uf].nome || F.uf) } });
+          closeSheet(); toast("Cidade salva");
+        } catch (e) { ev.target.disabled = false; b.querySelector("#fErr").textContent = dbErrMsg(e); }
+      };
+    });
+  }
+
+  // ----- Tabela FIPE (o app consulta a BrasilAPI direto do celular; cada carro é de uma pessoa) -----
+  const FIPE_API = "https://brasilapi.com.br/api/fipe";
+  const fipeCache = {};
+  async function fipeGet(path) {
+    if (fipeCache[path]) return fipeCache[path];
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const t = ctl ? setTimeout(() => ctl.abort(), 20000) : 0;
+    try {
+      const r = await fetch(FIPE_API + path, ctl ? { signal: ctl.signal } : undefined);
+      if (!r.ok) { const e = new Error("FIPE respondeu " + r.status); e.status = r.status; throw e; }
+      const j = await r.json();
+      fipeCache[path] = j;
+      return j;
+    } finally { clearTimeout(t); }
+  }
+  const MES_SA = MES.map(semAcento);
+  // "outubro/2026 " ou "outubro de 2026" -> número do mês (ano × 12 + mês), para achar o mesmo mês do ano anterior
+  function fipeMes(txt) {
+    const m = /([a-z]+)\W+(?:de\s+)?(\d{4})/.exec(semAcento(txt));
+    if (!m) return null;
+    const i = MES_SA.indexOf(m[1]);
+    return i < 0 ? null : Number(m[2]) * 12 + i;
+  }
+  const fipeNum = (t) => parseValor(String(t || "").replace(/[^\d,.]/g, ""));
+  // Valor de hoje e de 12 meses atrás do mesmo carro (mesmo modelo e ano): a diferença é quanto ele perde por ano.
+  async function fipeConsulta(f) {
+    const tabelas = await fipeGet("/tabelas/v1");
+    const atual = Array.isArray(tabelas) ? tabelas[0] : null;
+    if (!atual) throw new Error("FIPE sem tabela de referência");
+    const base = "/detalhes/v1/carros/" + encodeURIComponent(f.marca) + "/" + encodeURIComponent(f.modelo) + "/" + encodeURIComponent(f.ano);
+    const det = await fipeGet(base + "?tabela_referencia=" + atual.codigo);
+    const valor = fipeNum(det.valor);
+    if (!(valor > 0)) throw new Error("FIPE sem valor");
+    const mAtual = fipeMes(det.mesReferencia) ?? fipeMes(atual.mes);
+    let desval = null, valorAntes = null;
+    const antes = mAtual != null ? tabelas.find((t) => fipeMes(t.mes) === mAtual - 12) : null;
+    if (antes) {
+      try {
+        const d2 = await fipeGet(base + "?tabela_referencia=" + antes.codigo);
+        const v2 = fipeNum(d2.valor);
+        // se a resposta antiga voltar com o mês de hoje (fonte reserva sem histórico), não dá para comparar
+        if (v2 > 0 && fipeMes(d2.mesReferencia) === mAtual - 12) { valorAntes = v2; desval = Math.max(0, Math.min(40, (1 - valor / v2) * 100)); }
+      } catch (e) { /* carro novo demais para ter valor de 12 meses atrás */ }
+    }
+    return { valor, mes: String(det.mesReferencia || atual.mes).trim(), codigoFipe: det.codigoFipe || "", desval, valorAntes };
+  }
+  async function fipeAplicar(car, sel, r) {
+    const fipe = limpa({ ...sel, valor: r.valor, mes: r.mes, codigoFipe: r.codigoFipe, desval: r.desval, valorAntes: r.valorAntes, atualizado: today() });
+    const custos = { ...(car.custos || {}), valorCarro: Math.round(r.valor) };
+    if (r.desval != null) custos.desvalPct = Math.round(r.desval * 10) / 10;
+    await salvarCarro({ fipe, custos }, car);
+  }
+  // uma vez por abertura do app: carros com FIPE há mais de 25 dias sem atualizar ganham o valor do mês novo
+  let fipeRodou = false;
+  async function fipeAtualizarSozinho() {
+    if (fipeRodou || !S.local || S.offline || (typeof navigator.onLine === "boolean" && !navigator.onLine)) return;
+    const velhos = carros().filter((c) => c.fipe && c.fipe.marca && (!c.fipe.atualizado || -daysUntil(new Date(c.fipe.atualizado + "T00:00")) >= 25));
+    if (!velhos.length) return;
+    fipeRodou = true;
+    for (const car of velhos) {
+      try {
+        const { marca, marcaNome, modelo, modeloNome, ano, anoNome } = car.fipe;
+        const r = await fipeConsulta({ marca, modelo, ano });
+        await fipeAplicar(car, { marca, marcaNome, modelo, modeloNome, ano, anoNome }, r);
+      } catch (e) { /* sem internet ou FIPE fora do ar: tenta na próxima abertura */ }
+    }
+  }
+  function fipeForm(car = carAtivo()) {
+    const ja = car.fipe || {};
+    const F = { marcas: null, modelos: null, anos: null, marca: ja.marca || "", modelo: ja.modelo || "", ano: ja.ano || "", filtro: "", res: null, busy: "", erro: "" };
+    const nomeDe = (lista, v, k) => ((lista || []).find((x) => String(x.valor) === String(v)) || {})[k] || "";
+    const filtrados = () => (F.modelos || []).filter((m) => !F.filtro || semAcento(m.modelo).includes(semAcento(F.filtro)));
+    const opModelos = (mods) => `<option value="">${F.modelos ? (mods.length ? "Escolha o modelo (" + mods.length + ")" : "Nenhum modelo com esse nome") : "Carregando…"}</option>` +
+      mods.map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(F.modelo) ? " selected" : ""}>${esc(m.modelo)}</option>`).join("");
+    let redesenhar = () => {};
+    let meu = -1; // número desta folha (definido depois de abrir)
+    const carregar = async (oque) => {
+      F.busy = oque; F.erro = ""; if (formSeq === meu) redesenhar();
+      try {
+        if (oque === "marcas") F.marcas = await fipeGet("/marcas/v1/carros");
+        if (oque === "modelos") F.modelos = await fipeGet("/veiculos/v1/carros/" + encodeURIComponent(F.marca));
+        if (oque === "anos") F.anos = await fipeGet("/anos/v1/carros/" + encodeURIComponent(F.marca) + "/" + encodeURIComponent(F.modelo));
+        if (oque === "valor") F.res = await fipeConsulta({ marca: F.marca, modelo: F.modelo, ano: F.ano });
+      } catch (e) { F.erro = "Não consegui falar com a Tabela FIPE agora. Confira a internet e tente de novo."; }
+      F.busy = "";
+      // só redesenha se esta folha ainda estiver aberta
+      if (formSeq === meu && !$("#sheet").hidden) redesenhar();
+      return !F.erro;
+    };
+    openForm(() => `
+      <div><h2>Tabela FIPE</h2><p class="note">Escolha a marca, o modelo e o ano. Todo mês o app busca o valor novo sozinho e calcula quanto o carro perde de valor por ano.</p></div>
+      <label class="fld"><span>Marca</span><select id="fpMarca"${F.marcas ? "" : " disabled"}><option value="">${F.marcas ? "Escolha a marca" : "Carregando…"}</option>${(F.marcas || []).map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(F.marca) ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select></label>
+      ${F.marca ? `<div class="fld"><span>Modelo</span>${F.modelos && F.modelos.length > 12 ? `<input id="fpFiltro" placeholder="Filtrar, ex.: onix 1.0" value="${esc(F.filtro)}" autocomplete="off">` : ""}
+        <select id="fpModelo"${F.modelos ? "" : " disabled"}>${opModelos(filtrados())}</select></div>` : ""}
+      ${F.modelo ? `<label class="fld"><span>Ano</span><select id="fpAno"${F.anos ? "" : " disabled"}><option value="">${F.anos ? "Escolha o ano" : "Carregando…"}</option>${(F.anos || []).map((a) => `<option value="${esc(a.valor)}"${String(a.valor) === String(F.ano) ? " selected" : ""}>${esc(a.nome)}</option>`).join("")}</select></label>` : ""}
+      ${F.busy === "valor" ? `<p class="note">Buscando o valor…</p>` : F.res ? `<div class="cmp-out" id="fpRes"><span class="label">Tabela FIPE · ${esc(F.res.mes)}</span><b class="num">${brl(F.res.valor)}</b><span>${F.res.desval != null ? `Há 12 meses valia ${brl(F.res.valorAntes)}: perdeu ${num(F.res.desval, 1)}% em um ano. O app passa a usar isso como desvalorização.` : "Não achei o valor de 12 meses atrás para este modelo e ano. A desvalorização fica a que está nos custos."}</span></div>` : ""}
+      <p class="err" id="fErr">${esc(F.erro)}</p>
+      <div class="sh-actions">${car.fipe ? `<button type="button" class="btn ghost danger" id="fpOff">Parar de usar</button><span class="spacer"></span>` : ""}<button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${F.res && !S.offline ? "" : " disabled"}>Usar este valor</button></div>
+    `, (draw, b) => {
+      redesenhar = draw;
+      b.querySelector("#fCancel").onclick = closeSheet;
+      const sm = b.querySelector("#fpMarca"), so = b.querySelector("#fpModelo"), sa = b.querySelector("#fpAno"), fl = b.querySelector("#fpFiltro");
+      if (sm) sm.onchange = () => { F.marca = sm.value; F.modelo = ""; F.ano = ""; F.modelos = null; F.anos = null; F.res = null; F.filtro = ""; if (F.marca) carregar("modelos"); else draw(); };
+      if (so) so.onchange = () => { F.modelo = so.value; F.ano = ""; F.anos = null; F.res = null; if (F.modelo) carregar("anos"); else draw(); };
+      if (sa) sa.onchange = () => { F.ano = sa.value; F.res = null; if (F.ano) carregar("valor"); else draw(); };
+      // filtrar troca só a lista, sem redesenhar, para o teclado não fechar
+      if (fl && so) fl.oninput = () => { F.filtro = fl.value; so.innerHTML = opModelos(filtrados()); };
+      const off = b.querySelector("#fpOff");
+      if (off) off.onclick = async () => { try { await salvarCarro({ fipe: undefined }, car); closeSheet(); toast("O valor do carro não vai mais ser atualizado pela FIPE"); } catch (e) { b.querySelector("#fErr").textContent = dbErrMsg(e); } };
+      b.querySelector("#fSave").onclick = async (ev) => {
+        if (!F.res) return;
+        ev.target.disabled = true;
+        try {
+          await fipeAplicar(car, { marca: F.marca, marcaNome: nomeDe(F.marcas, F.marca, "nome"), modelo: F.modelo, modeloNome: nomeDe(F.modelos, F.modelo, "modelo"), ano: F.ano, anoNome: nomeDe(F.anos, F.ano, "nome") }, F.res);
+          closeSheet(); toast("Valor do carro atualizado pela Tabela FIPE");
+        } catch (e) { ev.target.disabled = false; b.querySelector("#fErr").textContent = dbErrMsg(e); }
+      };
+    });
+    meu = formSeq;
+    // carrega as listas do que já estava escolhido, uma depois da outra
+    (async () => {
+      if (!(await carregar("marcas"))) return;
+      if (F.marca && !(await carregar("modelos"))) return;
+      if (F.modelo && !(await carregar("anos"))) return;
+      if (F.ano) await carregar("valor");
+    })();
+  }
+
+  // ----- indicar o app: QR code com o link (biblioteca qrcode.js, guardada junto com o app) -----
+  const linkApp = () => location.href.split(/[?#]/)[0].replace(/index\.html$/, "");
+  let qrLib = null;
+  function carregarQR() {
+    if (window.qrcode) return Promise.resolve(window.qrcode);
+    if (!qrLib) {
+      qrLib = new Promise((ok, falha) => {
+        const sc = document.createElement("script");
+        sc.src = "qrcode.js";
+        sc.onload = () => (window.qrcode ? ok(window.qrcode) : falha(new Error("qrcode")));
+        sc.onerror = () => { qrLib = null; falha(new Error("qrcode")); };
+        document.head.appendChild(sc);
+      });
+    }
+    return qrLib;
+  }
+  async function desenharQR() {
+    if (!$("#qrBox")) return;
+    try {
+      const gerar = await carregarQR();
+      const qr = gerar(0, "M");
+      qr.addData(linkApp());
+      qr.make();
+      const box = $("#qrBox");
+      if (box) box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true, title: "Link do Caixa do Motorista" });
+    } catch (e) { const box = $("#qrBox"); if (box) box.hidden = true; }
+  }
+  async function compartilharApp() {
+    const url = linkApp();
+    const dados = { title: "Caixa do Motorista", text: "App grátis para motorista de aplicativo controlar ganhos, gastos e a manutenção do carro:", url };
+    if (navigator.share) {
+      try { await navigator.share(dados); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast("Link copiado. É só colar no WhatsApp."); } catch (e) { toast(url); }
+  }
+
   function custosForm() {
-    const c = { desvalPct: 10, ...(carAtivo().custos || {}) };
+    const car = carAtivo();
+    const c = { desvalPct: 10, ...(car.custos || {}) };
     const fields = [
       ["valorCarro", "Valor do carro (R$)", "60.000", "Usado para calcular quanto ele perde de valor."],
       ["desvalPct", "Desvalorização por ano (%)", "10", ""],
@@ -1210,10 +1445,14 @@ td:first-child { text-transform: capitalize; }
       ["outrosMes", "Outros por mês (R$)", "Rastreador, celular…", ""],
       ["kmDia", "Km que roda por dia (estimativa)", "120", "Usado só até o app aprender com os seus registros de KM."],
     ];
+    if (car.fipe) {
+      fields[0][3] = "Vem da Tabela FIPE e é atualizado todo mês. Se você mudar aqui, o app para de atualizar sozinho.";
+      if (car.fipe.desval != null) fields[1][3] = "Calculada pela Tabela FIPE: quanto este modelo perdeu em 12 meses.";
+    }
     const vals = {};
     fields.forEach(([k]) => { vals[k] = c[k] != null && c[k] !== "" ? num(c[k], c[k] % 1 ? 2 : 0) : ""; });
     openForm(() => `
-      <div><h2>Custos fixos · ${esc(nomeCarro(carAtivo()))}</h2><p class="note">Deixe em branco o que não tiver. Dá para mudar quando quiser.</p></div>
+      <div><h2>Custos fixos · ${esc(nomeCarro(car))}</h2><p class="note">Deixe em branco o que não tiver. Dá para mudar quando quiser.</p></div>
       ${fields.map(([k, l, ph, hint]) => `<label class="fld"><span>${l}</span><input id="cf_${k}" inputmode="decimal" placeholder="${esc(ph)}" value="${esc(vals[k])}">${hint ? `<small class="note" style="margin:0">${hint}</small>` : ""}</label>`).join("")}
       <p class="err" id="fErr"></p>
       <div class="sh-actions"><button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>Salvar</button></div>
@@ -1228,8 +1467,11 @@ td:first-child { text-transform: capitalize; }
           if (!(v >= 0)) { b.querySelector("#fErr").textContent = "Confira o campo " + l.toLowerCase() + "."; return; }
           out[k] = Math.round(v * 100) / 100;
         }
+        // mudou o valor ou a desvalorização à mão: a FIPE deixa de mexer neles
+        const patch = { custos: out };
+        if (car.fipe && (out.valorCarro !== Math.round(car.fipe.valor) || (car.fipe.desval != null && out.desvalPct !== Math.round(car.fipe.desval * 10) / 10))) patch.fipe = undefined;
         ev.target.disabled = true;
-        try { await salvarCarro({ custos: out }); closeSheet(); toast("Custos salvos"); }
+        try { await salvarCarro(patch, car); closeSheet(); toast("fipe" in patch ? "Custos salvos. A FIPE não vai mais mudar esses valores." : "Custos salvos"); }
         catch (e) { ev.target.disabled = false; b.querySelector("#fErr").textContent = dbErrMsg(e); }
       };
     });
@@ -1484,13 +1726,19 @@ td:first-child { text-transform: capitalize; }
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
         <p class="note" style="margin:0">${S.local ? "Os dados ficam só neste celular. Salve uma cópia de vez em quando e guarde no Drive, no e-mail ou no WhatsApp: se trocar de celular ou limpar o navegador, é ela que traz tudo de volta." : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + "." : ""}</p>
         <div class="exports">${S.downloads ? `<button class="btn sm primary" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
+      ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
+        <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
+          <div><p class="note" style="margin:0">Mostre este código para outro motorista apontar a câmera do celular, ou mande o link.</p><p class="qr-link">${esc(linkApp())}</p><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
       ${S.downloads ? `<div class="card"><div class="sec-h"><h2>Levar para a planilha</h2></div><p class="note" style="margin:0">Baixe em CSV. As colunas batem com a planilha: copie e cole na aba Lançamentos (ou Dias de trabalho) a partir da coluna A.</p>
         <div class="exports"><button class="btn sm ghost" id="expLanc">Exportar lançamentos</button><button class="btn sm ghost" id="expDias">Exportar dias de trabalho</button></div></div>` : ""}
     `;
+    if (S.local) desenharQR();
   }
 
   // ---------- folha (modal) ----------
+  let formSeq = 0;
   function openForm(build, bind) {
+    formSeq++;
     const body = $("#sheetBody");
     const draw = () => { body.innerHTML = build(); bind(draw, body); };
     draw();
@@ -1549,7 +1797,8 @@ td:first-child { text-transform: capitalize; }
         <div class="row2"><label class="fld"><span>Data</span><input type="date" id="fData" value="${esc(F.data)}"></label>
           <label class="fld"><span>Descrição</span><input id="fDesc" placeholder="${F.tipo === "ganho" ? "Ex.: manhã" : "Ex.: posto"}" value="${esc(F.desc)}"></label></div>
         ${F.cat === "Combustível" ? `<div class="fld"><span>Combustível</span><div class="chips">${COMBS.map((c) => `<button type="button" class="chip" data-comb="${c}" aria-pressed="${F.comb === c}">${c}</button>`).join("")}</div></div>
-          <label class="fld"><span>Posto</span><input id="fPosto" list="postosDL" autocomplete="off" placeholder="Ex.: Shell da Av. Brasil" value="${esc(F.posto || "")}"><datalist id="postosDL">${postosNomes().map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>` : ""}
+          <label class="fld"><span>Posto</span><input id="fPosto" list="postosDL" autocomplete="off" placeholder="Ex.: Shell da Av. Brasil" value="${esc(F.posto || "")}"><datalist id="postosDL">${postosNomes().map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
+          ${F.comb && anpMedio(F.comb) ? `<p class="hint" style="margin:0">Média em ${esc(anpLocal().nome)} nesta semana: ${brl(anpMedio(F.comb))}/${unidade(F.comb)} (ANP).</p>` : ""}` : ""}
         ${showKm ? `<div class="row2">${F.cat === "Combustível" ? `<label class="fld"><span>Litros</span><input id="fLit" inputmode="decimal" placeholder="0,0" value="${esc(F.litros)}"></label>` : ""}
           <label class="fld"><span>KM no painel</span><input id="fKm" type="number" inputmode="numeric" placeholder="${kmAtual(F.carId) ? num(kmAtual(F.carId)) : "Ex.: 45900"}" value="${esc(F.km)}"></label></div>` : ""}
         ${F.cat === "Combustível" ? `<label class="check"><input type="checkbox" id="fCheio"${F.cheio !== false ? " checked" : ""}><span>Enchi o tanque<br><small>Com o tanque cheio, os litros e o KM, o app calcula sua média por litro.</small></span></label>` : ""}
@@ -1624,7 +1873,13 @@ td:first-child { text-transform: capitalize; }
               await col("dias").add(dia);
             }
           }
-          closeSheet(); toast(F.id ? "Lançamento atualizado" : (F.tipo === "ganho" ? "Ganho salvo" : "Gasto salvo"));
+          let msg = F.id ? "Lançamento atualizado" : (F.tipo === "ganho" ? "Ganho salvo" : "Gasto salvo");
+          const media = doc.cat === "Combustível" && doc.litros > 0 && doc.comb ? anpMedio(doc.comb) : null;
+          if (media) {
+            const dif = doc.valor / doc.litros - media;
+            if (Math.abs(dif) >= 0.01) msg += ". Você pagou " + brl(Math.abs(dif)) + (dif > 0 ? " a mais" : " a menos") + " por " + (doc.comb === "GNV" ? "m³" : "litro") + " que a média da cidade.";
+          }
+          closeSheet(); toast(msg);
         } catch (e) { ev.target.disabled = false; err.textContent = dbErrMsg(e); }
       };
     });
@@ -1985,6 +2240,9 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.dataset.metafixo) { custosForm(); return; }
     if (t.dataset.hist) { const h = S.hist.find((x) => x.id === t.dataset.hist); if (h) histForm(h); return; }
     if (t.id === "expLanc") { exportar("lanc"); return; }
+    if (t.id === "fipeBtn") { fipeForm(); return; }
+    if (t.id === "cidadeBtn") { cidadeForm(); return; }
+    if (t.id === "shareApp") { compartilharApp(); return; }
     if (t.id === "bkSave") { salvarBackup(t); return; }
     if (t.id === "bkLoad") { restaurarForm(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
@@ -2042,7 +2300,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     S.base.collection("manutencao").onSnapshot((q) => { S.manut = list(q); S.loaded.m = true; render(); talvezCriarPadrao(); }, onErr);
     S.base.collection("historico").onSnapshot((q) => { S.hist = list(q); render(); }, onErr);
     S.base.collection("documentos").onSnapshot((q) => { S.docs = list(q); render(); }, onErr);
-    S.base.collection("carros").onSnapshot((q) => { S.cars = list(q); render(); }, onErr);
+    S.base.collection("carros").onSnapshot((q) => { S.cars = list(q); render(); fipeAtualizarSozinho(); }, onErr);
     S.base.collection("separados").onSnapshot((q) => { S.seps = list(q); render(); }, onErr);
     C.use("sample").then(async (sm) => {
       if (!sm) return;
@@ -2051,13 +2309,12 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       S.canImg = !!(lim && lim.images);
     });
     C.use("downloads").then((d) => { S.downloads = d; if (S.tab === "resumo") render(); });
+    // preço médio dos combustíveis (o robô do GitHub atualiza toda semana); fora do app publicado não existe
+    if (S.local) {
+      fetch("dados/anp.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null))
+        .then((j) => { if (j && j.estados) { S.anp = j; render(); } }).catch(() => {});
+    }
   }
   boot();
 })();
 </script>
-<script>
-  if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-</script>
-
-</body>
-</html>
