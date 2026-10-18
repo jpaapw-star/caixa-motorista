@@ -534,8 +534,10 @@ test("novo carro: escolhendo marca, modelo e ano na FIPE, o resto se preenche so
   await aba(page, "carro");
   await page.click("#addCar");
   await page.selectOption("#cfMarca", "23");
-  await page.fill("#cfFiltro", "onix");
-  await page.selectOption("#cfModelo", "9001");
+  await page.fill("#cfModelo", "onix");
+  await expect(page.locator(".sug")).toHaveCount(1); // a lista filtra enquanto digita
+  await page.click('[data-mod="9001"]');
+  await expect(page.locator("#cfModelo")).toHaveValue("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
   await page.fill("#cP", "abc1d23");
   await page.selectOption("#cfAno", "2020-1");
   await expect(page.locator("#cfOk")).toContainText("60.000,00");
@@ -554,4 +556,39 @@ test("novo carro: escolhendo marca, modelo e ano na FIPE, o resto se preenche so
   expect(carro.tanque).toBe(44);
   expect(carro.fipe.valor).toBe(60000);
   expect(carro.custos.valorCarro).toBe(60000);
+});
+
+test("novo carro: se a BrasilAPI falha, busca na reserva; e dá para digitar à mão", async ({ page }) => {
+  await page.route(/brasilapi\.com\.br\/api\/fipe\/(anos|detalhes)/, (r) => r.fulfill({ status: 500, headers: { "access-control-allow-origin": "*" }, body: "" }));
+  const pedidos = [];
+  await page.route(/parallelum\.com\.br/, (r) => {
+    const u = new URL(r.request().url()).pathname; pedidos.push(u);
+    const json = (o) => r.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(o) });
+    if (u.endsWith("/marcas/23/modelos/9001/anos")) return json([{ codigo: "2020-1", nome: "2020 Gasolina" }]);
+    if (u.endsWith("/marcas/23/modelos/9001/anos/2020-1")) return json({ Valor: "R$ 58.000,00", MesReferencia: "outubro de 2026", CodigoFipe: "004461-0", Combustivel: "Gasolina", AnoModelo: 2020 });
+    return r.fulfill({ status: 404, body: "" });
+  });
+  await abrir(page, dados());
+  await aba(page, "carro");
+  await page.click("#addCar");
+  await expect(page.locator("#cM")).toBeHidden(); // só a busca, sem campos repetidos
+  await page.selectOption("#cfMarca", "23");
+  await page.fill("#cfModelo", "onix");
+  await expect(page.locator(".sug")).toHaveCount(1); // a lista filtra enquanto digita
+  await page.click('[data-mod="9001"]');
+  await expect(page.locator("#cfModelo")).toHaveValue("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
+  await page.selectOption("#cfAno", "2020-1");
+  await expect(page.locator("#cfOk")).toContainText("58.000,00");
+  expect(pedidos.length).toBeGreaterThan(0);
+  // trocar e digitar à mão
+  await page.click("#cfTrocar");
+  await page.click("#cfMao");
+  await expect(page.locator("#cM")).toBeVisible();
+  await page.fill("#cM", "Fusca 1300");
+  await page.fill("#cA", "1975");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  const carro = Object.entries(await lerLoja(page)).find(([k, v]) => k.includes("/carros/") && v && v.modelo === "Fusca 1300")[1];
+  expect(carro.ano).toBe(1975);
+  expect(carro.fipe).toBeUndefined();
 });
