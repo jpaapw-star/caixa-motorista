@@ -113,6 +113,9 @@ button { cursor: pointer; }
 .sec-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .sec-h h2 { margin: 0; font: 600 20px/1.1 var(--f-disp); }
 .sec-h small { color: var(--muted); font-size: 13px; }
+.sec-btn { width: 100%; background: none; border: 0; padding: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.sec-btn .seta { font-size: 14px; color: var(--muted); }
+.ver-mais { display: block; width: 100%; margin-top: -4px; padding: 8px; background: none; border: 0; color: var(--muted); font: 500 13px var(--f-body); text-decoration: underline; cursor: pointer; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .metrics > div { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
 .metrics .v { font: 600 25px/1.1 var(--f-disp); font-variant-numeric: tabular-nums; }
@@ -777,6 +780,11 @@ td:first-child { text-transform: capitalize; }
   }
   const postosNomes = () => [...new Set(S.lanc.filter((x) => x.posto).map((x) => String(x.posto).trim()))].sort();
 
+  // "Trabalho no mês": só o essencial; o resto abre ao tocar no título (fica lembrado)
+  const TRAB_ABERTO = "caixa-motorista:trabalho-aberto";
+  let trabAberto = false;
+  try { trabAberto = localStorage.getItem(TRAB_ABERTO) === "1"; } catch (e) { /* sem armazenamento */ }
+
   function renderInicio() {
     const s = stats(S.ym);
     const km = kmAtual();
@@ -806,23 +814,24 @@ td:first-child { text-transform: capitalize; }
       </div></div>
       ${jornadaHTML()}
       <div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>
-      <div class="sec-h"><h2>Trabalho no mês</h2><small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)} · ${num(s.corridas)} corridas</small></div>
+      <button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês <span class="seta">${trabAberto ? "▴" : "▾"}</span></h2><small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)} · ${num(s.corridas)} corridas</small></button>
       <div class="metrics">
         <div><span class="label">Ganho por hora</span><span class="v">${m(perH, brl)}</span></div>
-        <div><span class="label">Lucro por hora</span><span class="v">${m(lucroH, brl)}</span></div>
-        <div><span class="label">Lucro por dia</span><span class="v">${m(lucroDia, brl)}</span></div>
-        <div><span class="label">Ganho por km</span><span class="v">${m(perKm, brl)}</span></div>
         <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
-        <div><span class="label">Por corrida</span><span class="v">${m(s.corridas > 0 ? s.trab / s.corridas : null, brl)}</span></div>
-        <div><span class="label">Km rodados vazio</span><span class="v">${s.vazioPct == null ? "<small>—</small>" : num(s.vazioPct * 100) + " <small>%</small>"}</span></div>
-        <div><span class="label">Ganho por km c/ passageiro</span><span class="v">${m(s.kmPass > 0 ? s.trabPass / s.kmPass : null, brl)}</span></div>
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
           const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? cd.combDia * N : null;
           return `<button class="tile" data-calc="1"><span class="label">Combustível em ${mes} ›</span><span class="v">${brl(s.comb)}</span><span class="hint">Toque para ver qual colocar</span></button>
           <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão de combustível" : "Combustível por dia"} ›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? brl(cd.combDia) + " por dia, no seu ritmo" : "Aparece depois de 2 abastecimentos com KM") : "média do mês"}</span></button>`;
         })()}
+        ${trabAberto ? `<div><span class="label">Lucro por hora</span><span class="v">${m(lucroH, brl)}</span></div>
+        <div><span class="label">Lucro por dia</span><span class="v">${m(lucroDia, brl)}</span></div>
+        <div><span class="label">Ganho por km</span><span class="v">${m(perKm, brl)}</span></div>
+        <div><span class="label">Por corrida</span><span class="v">${m(s.corridas > 0 ? s.trab / s.corridas : null, brl)}</span></div>
+        <div><span class="label">Km rodados vazio</span><span class="v">${s.vazioPct == null ? "<small>—</small>" : num(s.vazioPct * 100) + " <small>%</small>"}</span></div>
+        <div><span class="label">Ganho por km c/ passageiro</span><span class="v">${m(s.kmPass > 0 ? s.trabPass / s.kmPass : null, brl)}</span></div>` : ""}
       </div>
+      <button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver todos os números do mês"}</button>
       <div class="caixa">
         <div class="split"><span class="label">Para manter ${variosCarros() ? "os carros" : "o carro"}</span><small>${rc.D > 0 ? "média de " + brl(rc.D) + " por dia" : ""}</small></div>
         ${rc.D > 0 ? `<div class="split"><b class="big num">${brl(rc.faltaHoje)}<small style="font:500 15px var(--f-body);color:var(--muted)"> para separar hoje</small></b></div>
@@ -1964,6 +1973,9 @@ td:first-child { text-transform: capitalize; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 3, data: "2026-10-18", itens: [
+      "Início mais limpo: em \"Trabalho no mês\" ficam só ganho por hora, ganhos nos apps e combustível. Toque no título para ver todos os números.",
+    ] },
     { v: 2, data: "2026-10-18", itens: [
       "Novo ícone: um carro preto e branco.",
       "Ao cadastrar o carro, escolha marca, modelo e ano e o app preenche o resto sozinho, com o valor da Tabela FIPE.",
@@ -2576,6 +2588,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "verTut") { tutorialForm(); return; }
     if (t.id === "verNov") { novidadesForm(NOVIDADES.slice().sort((a, b) => b.v - a.v)); return; }
     if (t.id === "bkLoad") { restaurarForm(); return; }
+    if (t.id === "trabMais" || t.id === "trabMais2") { trabAberto = !trabAberto; try { localStorage.setItem(TRAB_ABERTO, trabAberto ? "1" : "0"); } catch (e) { /* nada */ } renderInicio(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
     if (t.dataset.lanc) { const x = S.lanc.find((x) => x.id === t.dataset.lanc); if (x) lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); return; }
     if (t.dataset.dia) { const d = S.dias.find((x) => x.id === t.dataset.dia); if (d) diaForm(d); return; }
