@@ -1,4 +1,4 @@
-// Testes automáticos do Caixa do Motorista.
+// Testes automáticos do RLCAR.
 // O robô do GitHub roda tudo em dois celulares simulados: Android (Chrome) e iPhone (motor do Safari).
 // Para rodar no computador: python build.py && npm install && npx playwright install && npx playwright test
 // @ts-check

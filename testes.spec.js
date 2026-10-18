@@ -1,4 +1,4 @@
-// Testes automáticos do Caixa do Motorista.
+// Testes automáticos do RLCAR.
 // Cada teste abre o app num celular simulado (Android e iPhone), usa como um motorista usaria e confere os números.
 // A Tabela FIPE e a ANP são simuladas aqui, para o teste não depender da internet nem do preço da semana.
 const fs = require("fs");
@@ -104,9 +104,9 @@ test.afterEach(async ({ page }) => {
 
 test("abre e pode ser instalado", async ({ page, request }) => {
   await abrir(page);
-  await expect(page).toHaveTitle(/Caixa do Motorista/);
+  await expect(page).toHaveTitle(/RLCAR/);
   const manifesto = await (await request.get(await page.locator('link[rel="manifest"]').getAttribute("href"))).json();
-  expect(manifesto.name).toBe("Caixa do Motorista");
+  expect(manifesto.name).toBe("RLCAR");
   expect(manifesto.display).toBe("standalone");
   for (const icone of manifesto.icons) expect((await request.get(icone.src)).ok(), icone.src).toBeTruthy();
   await expect(page.locator("#offline")).toBeHidden();
@@ -140,6 +140,48 @@ test("lança ganho e abastecimento, e os dados continuam depois de fechar", asyn
   await expect(page.locator(".lucro")).toContainText("50,00");
   const loja = await lerLoja(page);
   expect(Object.keys(loja).filter((k) => k.includes("/lancamentos/"))).toHaveLength(2);
+});
+
+test("KM com um zero a mais pede confirmação, e a tela de KM mostra onde está o erro", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(-5), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 200, litros: 33, km: 50000, ts: 1 }] }));
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Combustível"]');
+  await page.fill("#fValor", "150");
+  await page.fill("#fLit", "25");
+  await page.fill("#fKm", "500000");
+  await page.click("#fSave");
+  await expect(page.locator("#fErr")).toContainText("Confira o painel");
+  await expect(page.locator("#sheet")).toBeVisible();
+  await page.click("#fSave"); // estava certo: segundo toque salva
+  await expect(page.locator("#sheet")).toBeHidden();
+  // corrigir pela tela de KM não adianta: ela aponta o lançamento com o KM maior
+  await aba(page, "carro");
+  await page.click("#setKm");
+  await page.fill("#kK", "50500");
+  await page.click("#fSave");
+  await expect(page.locator("#fErr")).toContainText("500.000");
+  await expect(page.locator("#fErr")).toContainText("Histórico");
+  // um KM normal salva de primeira
+  await page.click("#fCancel");
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Combustível"]');
+  await page.fill("#fValor", "100");
+  await page.fill("#fKm", "500400");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+});
+
+test("no iPhone, pelo Safari, avisa para instalar antes de anotar", async ({ page, browserName }) => {
+  await abrir(page);
+  if (browserName !== "webkit") { await expect(page.locator("#iosInst")).toBeHidden(); return; }
+  await expect(page.locator("#iosInst")).toBeVisible();
+  await page.click("#iosOk");
+  await expect(page.locator("#iosInst")).toBeHidden();
+  await page.reload();
+  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await expect(page.locator("#iosInst")).toBeHidden();
 });
 
 test("consumo por litro e qual combustível colocar", async ({ page }) => {
@@ -304,6 +346,107 @@ test("cópia de segurança: salva e restaura em outro celular", async ({ page },
   await page.setInputFiles("#bkIn", { name: "errado.json", mimeType: "application/json", buffer: Buffer.from('{"x":1}') });
   await expect(page.locator("#fErr")).toContainText("não é uma cópia");
   await expect(page.locator("#fSave")).toBeDisabled();
+});
+
+test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta pela primeira tela", async ({ page }) => {
+  // menu de compartilhar como o do Chrome no Android: aceita texto, recusa .json
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "canShare", { configurable: true, value: (d) => !!(d && d.files && /\.txt$/.test(d.files[0].name)) });
+    Object.defineProperty(Navigator.prototype, "share", { configurable: true, value: async (d) => { window.__compartilhado = { nome: d.files[0].name, texto: await d.files[0].text() }; } });
+  });
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 300, sep: 30, ts: 1 }] }, { ultimoBackup: Date.now() - 8 * 864e5 }));
+  // lembra depois de uma semana sem cópia
+  await expect(page.locator(".alerts")).toContainText("Cópia de segurança");
+  await expect(page.locator(".alerts")).toContainText("8 dias");
+  await expect(page.locator("#restIni")).toHaveCount(0);
+  await aba(page, "resumo");
+  await page.click("#bkSave");
+  await expect(page.locator("#toast")).toContainText("Cópia enviada");
+  const enviado = await page.evaluate(() => window.__compartilhado);
+  expect(enviado.nome).toMatch(/^rlcar-copia-.*\.txt$/);
+  expect(JSON.parse(enviado.texto).colecoes.lancamentos).toHaveLength(1);
+  await aba(page, "inicio");
+  await expect(page.locator(".alerts")).toHaveCount(0);
+  // formatou: o app abre vazio e oferece restaurar logo na primeira tela
+  await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
+  await page.reload();
+  await expect(page.locator("#restIni")).toBeVisible();
+  await page.click("#bkLoadIni");
+  await page.setInputFiles("#bkIn", { name: enviado.nome, mimeType: "text/plain", buffer: Buffer.from(enviado.texto) });
+  await expect(page.locator("#bkMsg")).toContainText("1 registro");
+  await page.click("#fSave");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  await expect(page.locator(".lucro")).toContainText("300,00");
+  await expect(page.locator("#restIni")).toHaveCount(0);
+});
+
+test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura no celular novo", async ({ page, context }) => {
+  // config com o ID do cliente, login do Google e Drive simulados (o arquivo fica guardado aqui no teste)
+  await context.route(/\/config\.js$/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: 'window.CAIXA_CONFIG = { sentryDsn: "", googleClientId: "123-abc.apps.googleusercontent.com" };' }));
+  await context.route(/accounts\.google\.com\/gsi\/client/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: `
+    window.__logins = 0;
+    window.google = { accounts: { oauth2: {
+      hasGrantedAllScopes: () => true,
+      initTokenClient: (o) => ({ requestAccessToken: () => { window.__logins++; setTimeout(() => o.callback({ access_token: "tok", expires_in: 3600 }), 0); } }),
+    } } };` }));
+  const drive = { id: null, texto: null };
+  await context.route(/www\.googleapis\.com/, async (r) => {
+    const req = r.request(), u = new URL(req.url());
+    const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, PATCH" };
+    if (req.method() === "OPTIONS") return r.fulfill({ status: 204, headers: cors });
+    expect(req.headers()["authorization"]).toBe("Bearer tok");
+    const json = (o) => r.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(o) });
+    if (u.pathname === "/drive/v3/files") { expect(u.searchParams.get("spaces")).toBe("appDataFolder"); return json({ files: drive.id ? [{ id: drive.id }] : [] }); }
+    if (u.pathname === "/upload/drive/v3/files" && req.method() === "POST") {
+      const corpo = req.postData();
+      expect(corpo).toContain('"parents":["appDataFolder"]');
+      drive.id = "arq1"; drive.texto = corpo.split("\r\n\r\n")[2].split("\r\n--")[0];
+      return json({ id: drive.id });
+    }
+    if (u.pathname === "/upload/drive/v3/files/arq1" && req.method() === "PATCH") { drive.texto = req.postData(); return json({ id: drive.id }); }
+    if (u.pathname === "/drive/v3/files/arq1") return r.fulfill({ status: 200, contentType: "application/json", headers: cors, body: drive.texto });
+    return r.fulfill({ status: 404, headers: cors, body: "" });
+  });
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 300, sep: 30, ts: 1 }] }));
+  await aba(page, "resumo");
+  await page.click("#gSave");
+  await expect(page.locator("#toast")).toContainText("Google Drive");
+  expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(1);
+  // o que anotar depois salva sozinho, sem novo login
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Lavagem"]');
+  await page.fill("#fValor", "50");
+  await page.click("#fSave");
+  await expect.poll(() => drive.texto && JSON.parse(drive.texto).colecoes.lancamentos.length, { timeout: 15000 }).toBe(2);
+  expect(await page.evaluate(() => window.__logins)).toBe(1);
+  // celular novo: vazio, não deixa salvar por cima da cópia boa, e restaura pelo Google
+  await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
+  await page.reload();
+  await expect(page.locator("#restIni")).toBeVisible();
+  await aba(page, "resumo");
+  await page.click("#gSave");
+  await expect(page.locator("#toast")).toContainText("Ainda não há nada");
+  expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(2);
+  await aba(page, "inicio");
+  await page.click("#bkLoadIni");
+  await page.click("#gBusca");
+  await expect(page.locator("#bkMsg")).toContainText("2 registros");
+  await page.click("#fSave");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  await expect(page.locator(".lucro")).toContainText("250,00");
+});
+
+test("sem o ID do Google em config.js, os botões do Google ficam escondidos", async ({ page, context }) => {
+  await context.route(/\/config\.js$/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: 'window.CAIXA_CONFIG = { sentryDsn: "", googleClientId: "" };' }));
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }));
+  await aba(page, "resumo");
+  await expect(page.locator("#bkSave")).toBeVisible();
+  await expect(page.locator("#gSave")).toHaveCount(0);
+  await page.click("#bkLoad");
+  await expect(page.locator("#gBusca")).toHaveCount(0);
 });
 
 test.describe("no Chrome", () => {

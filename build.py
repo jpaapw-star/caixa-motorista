@@ -19,8 +19,8 @@ def ler(nome):
 
 
 src = ler("app.html")
-local_js, config_js, sw_modelo, qr_js = ler("local.js"), ler("config.js"), ler("sw.template.js"), ler("qrcode.js")
-versao = hashlib.sha1((src + local_js + config_js + sw_modelo + qr_js).encode()).hexdigest()[:10]
+local_js, config_js, sw_modelo, qr_js, drive_js = ler("local.js"), ler("config.js"), ler("sw.template.js"), ler("qrcode.js"), ler("drive.js")
+versao = hashlib.sha1((src + local_js + config_js + sw_modelo + qr_js + drive_js).encode()).hexdigest()[:10]
 
 # separa o cabeçalho (título, fontes, estilos) do corpo (telas e script)
 corte = src.index("</style>") + len("</style>")
@@ -47,7 +47,7 @@ sentry = """<script src="config.js"></script>
 </script>
 """ % versao
 
-corpo = corpo.replace("<script>\n(() => {", sentry + '<script src="local.js"></script>\n<script>\n(() => {', 1)
+corpo = corpo.replace("<script>\n(() => {", sentry + '<script src="local.js"></script>\n<script src="drive.js"></script>\n<script>\n(() => {', 1)
 corpo = corpo.rstrip() + """
 <script>
   if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
@@ -67,7 +67,7 @@ index = f"""<!doctype html>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Caixa Motorista">
+<meta name="apple-mobile-web-app-title" content="RLCAR">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 {cab}
 </head>
@@ -78,8 +78,8 @@ index = f"""<!doctype html>
 """
 
 manifest = {
-    "name": "Caixa do Motorista",
-    "short_name": "Caixa Motorista",
+    "name": "RLCAR",
+    "short_name": "RLCAR",
     "description": "Ganhos, gastos, combustível e manutenção do carro para motoristas de aplicativo.",
     "lang": "pt-BR",
     "id": "./",
@@ -109,7 +109,7 @@ def escrever(nome, texto):
 escrever("index.html", index)
 escrever("manifest.webmanifest", json.dumps(manifest, ensure_ascii=False, indent=2))
 escrever("sw.js", sw_modelo.replace("__VERSAO__", versao))
-for nome in ["local.js", "config.js", "qrcode.js", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"]:
+for nome in ["local.js", "drive.js", "config.js", "qrcode.js", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"]:
     shutil.copy(os.path.join(AQUI, nome), os.path.join(DIST, nome))
 
 # preços da ANP (o robô grava em dados/anp.json); sem eles, o app só esconde a comparação

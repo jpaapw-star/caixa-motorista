@@ -1,4 +1,4 @@
-<title>Caixa do Motorista</title>
+<title>RLCAR</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -300,7 +300,7 @@ td:first-child { text-transform: capitalize; }
 </style>
 
 <header class="top">
-  <div class="brand"><i></i><span>Caixa do Motorista</span></div>
+  <div class="brand"><i></i><span>RLCAR</span></div>
   <div class="month">
     <button class="icon-btn" id="prevM" aria-label="Mês anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
     <b id="mesLbl">outubro 2026</b>
@@ -310,6 +310,7 @@ td:first-child { text-transform: capitalize; }
 
 <main class="wrap">
   <div id="offline" class="banner" hidden>Para salvar seus dados, abra esta página no Claude com a sua conta.</div>
+  <div id="iosInst" class="banner" hidden><b>Instale antes de começar a anotar.</b> No iPhone, o que você anota aqui no Safari não passa para o app instalado, e o Safari pode apagar os dados se ficar 7 dias sem abrir. Toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. <br><button type="button" class="btn ghost sm" id="iosOk" style="margin-top:8px">Entendi</button></div>
   <section id="tab-inicio" class="wrap"></section>
   <section id="tab-historico" class="wrap" hidden></section>
   <section id="tab-carro" class="wrap" hidden></section>
@@ -368,7 +369,7 @@ td:first-child { text-transform: capitalize; }
     base: null, local: false, settings: {}, lanc: [], dias: [], manut: [],
     loaded: { s: false, l: false, d: false, m: false },
     ym: null, tab: "inicio", offline: false, sample: null, canImg: false, downloads: null,
-    carroSub: "consumo", cmp: {}, anp: null, hist: [], docs: [], cars: [], seps: [], dia: null,
+    carroSub: "consumo", cmp: {}, anp: null, hist: [], docs: [], cars: [], seps: [], dia: null, googleSig: null,
   };
 
   // ---------- utilidades ----------
@@ -454,6 +455,26 @@ td:first-child { text-transform: capitalize; }
     S.hist.forEach((h) => { if (cid(h) === carId) vals.push(Number(h.km) || 0); });
     return Math.max(0, ...vals);
   }
+  // KM muito acima do maior já anotado costuma ser um zero a mais. Como o app usa sempre o maior KM,
+  // um erro desses deixaria as manutenções "vencidas"; então pede para conferir e tocar em Salvar de novo.
+  const KM_SALTO = 3000;
+  function kmConfere(btn, err, kms, carId = carAtivoId()) {
+    const atual = kmAtual(carId);
+    const k = Math.max(0, ...kms.map((v) => Number(v) || 0));
+    if (!atual || k <= atual + KM_SALTO || btn.dataset.kmOk === String(k)) return true;
+    btn.dataset.kmOk = String(k);
+    err.textContent = "O KM " + num(k) + " está " + num(k - atual) + " km acima do último anotado (" + num(atual) + "). Confira o painel. Se estiver certo, toque em salvar de novo.";
+    return false;
+  }
+  // onde foi anotado um KM maior que k (para achar e corrigir um erro de digitação)
+  function kmMaiorOnde(k, carId = carAtivoId()) {
+    const r = [];
+    S.lanc.forEach((x) => { if (cid(x) === carId && Number(x.km) > k) r.push([Number(x.km), x.data, "o lançamento de " + (x.cat || "gasto").toLowerCase() + " (Histórico)"]); });
+    S.dias.forEach((d) => { if (cid(d) === carId && Math.max(Number(d.kmFim) || 0, Number(d.kmIni) || 0) > k) r.push([Math.max(Number(d.kmFim) || 0, Number(d.kmIni) || 0), d.data, "o dia de trabalho (Histórico)"]); });
+    S.manut.forEach((m) => { if (cid(m) === carId && Number(m.ultKm) > k) r.push([Number(m.ultKm), m.ultData, "o serviço " + m.servico + " (Carro, Manutenção)"]); });
+    S.hist.forEach((h) => { if (cid(h) === carId && Number(h.km) > k) r.push([Number(h.km), h.data, "o histórico de " + h.servico + " (Carro)"]); });
+    return r.sort((a, b) => b[0] - a[0])[0] || null;
+  }
   function stats(ym, carId) {
     const L = S.lanc.filter((x) => (x.data || "").startsWith(ym) && (!carId || cid(x) === carId));
     const D = S.dias.filter((x) => (x.data || "").startsWith(ym) && (!carId || cid(x) === carId));
@@ -525,6 +546,7 @@ td:first-child { text-transform: capitalize; }
     if (S.tab === "historico") renderHistorico();
     if (S.tab === "carro") renderCarro();
     if (S.tab === "resumo") renderResumo();
+    agendarGoogle();
   }
 
   function jornadaHTML() {
@@ -776,6 +798,9 @@ td:first-child { text-transform: capitalize; }
         <div class="lucro num">${loading ? "…" : brl(s.saldo)}</div>
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
+      ${S.local && S.loaded.l && S.loaded.d && !(S.lanc.length + S.dias.length + S.hist.length) ? `<div class="card" id="restIni"><div class="sec-h"><h2>Trocou de celular ou formatou?</h2></div>
+        <p class="note" style="margin:0">${temGoogle() ? "Se você salvou no Google, entre com a mesma conta e traga tudo de volta agora. Também dá para usar um arquivo de cópia." : "Se você salvou uma cópia no Drive, no WhatsApp ou no e-mail, traga tudo de volta agora."}</p>
+        <div class="btn-row"><button class="btn sm primary" id="bkLoadIni"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>` : ""}
       ${jornadaHTML()}
       <div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>
       <div class="sec-h"><h2>Trabalho no mês</h2><small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)} · ${num(s.corridas)} corridas</small></div>
@@ -1420,12 +1445,12 @@ td:first-child { text-transform: capitalize; }
       qr.addData(linkApp());
       qr.make();
       const box = $("#qrBox");
-      if (box) box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true, title: "Link do Caixa do Motorista" });
+      if (box) box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true, title: "Link do RLCAR" });
     } catch (e) { const box = $("#qrBox"); if (box) box.hidden = true; }
   }
   async function compartilharApp() {
     const url = linkApp();
-    const dados = { title: "Caixa do Motorista", text: "App grátis para motorista de aplicativo controlar ganhos, gastos e a manutenção do carro:", url };
+    const dados = { title: "RLCAR", text: "RLCAR, app grátis para motorista de aplicativo controlar ganhos, gastos e a manutenção do carro:", url };
     if (navigator.share) {
       try { await navigator.share(dados); return; } catch (e) { if (e && e.name === "AbortError") return; }
     }
@@ -1581,6 +1606,7 @@ td:first-child { text-transform: capitalize; }
         const rec = { servico: servico.slice(0, 80), data, ts: (h && h.ts) || Date.now(), carId: carH };
         if (h && h.mid) rec.mid = h.mid;
         const km = intOrNull(b.querySelector("#hK").value); if (km) rec.km = km;
+        if (!kmConfere(ev.target, err, [km], carH)) return;
         const v = parseValor(b.querySelector("#hV").value); if (v > 0) rec.valor = Math.round(v * 100) / 100;
         const local = b.querySelector("#hL").value.trim(); if (local) rec.local = local.slice(0, 60);
         const lancar = !h && b.querySelector("#hLanc") && b.querySelector("#hLanc").checked && rec.valor > 0;
@@ -1724,8 +1750,10 @@ td:first-child { text-transform: capitalize; }
       <div class="card"><div class="sec-h"><h2>Ganhos por app em ${mes}</h2></div>${porCat("ganho")}</div>
       <div class="card"><div class="sec-h"><h2>Para onde foi o dinheiro</h2></div>${porCat("gasto")}</div>
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
-        <p class="note" style="margin:0">${S.local ? "Os dados ficam só neste celular. Salve uma cópia de vez em quando e guarde no Drive, no e-mail ou no WhatsApp: se trocar de celular ou limpar o navegador, é ela que traz tudo de volta." : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + "." : ""}</p>
-        <div class="exports">${S.downloads ? `<button class="btn sm primary" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
+        <p class="note" style="margin:0">${S.local ? (temGoogle()
+          ? "Os dados ficam neste celular. Toque em Salvar no Google para guardar uma cópia no Google Drive da sua conta (o app lembra toda semana). Se trocar de celular ou formatar, entre com a mesma conta em Restaurar cópia e tudo volta."
+          : "Os dados ficam só neste celular. Toque em Salvar cópia e mande para o seu Google Drive, WhatsApp ou e-mail (o app lembra toda semana). Se trocar de celular, formatar ou limpar o navegador, é a cópia que traz tudo de volta: no celular novo, toque em Restaurar cópia e escolha o arquivo.") : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") + "." : ""}</p>
+        <div class="exports">${temGoogle() ? `<button class="btn sm primary" id="gSave"${S.offline ? " disabled" : ""}>Salvar no Google</button>` : ""}${S.downloads ? `<button class="btn sm ${temGoogle() ? "ghost" : "primary"}" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
       ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
         <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
           <div><p class="note" style="margin:0">Mostre este código para outro motorista apontar a câmera do celular, ou mande o link.</p><p class="qr-link">${esc(linkApp())}</p><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
@@ -1843,6 +1871,7 @@ td:first-child { text-transform: capitalize; }
         const c = catOf(F.cat);
         const doc = { data: F.data, tipo: F.tipo, cat: F.cat, trabalho: !!(c && c.w), valor: Math.round(valor * 100) / 100, desc: String(F.desc || "").trim().slice(0, 120), ts: F.ts || Date.now(), carId: F.carId };
         const kmN = intOrNull(F.km); if (kmN && KM_CATS.includes(F.cat)) doc.km = kmN;
+        if (!kmConfere(ev.target, err, [doc.km], F.carId)) return;
         const lit = parseValor(F.litros); if (lit > 0 && F.cat === "Combustível") doc.litros = Math.round(lit * 100) / 100;
         if (F.cat === "Combustível") { if (F.comb) doc.comb = F.comb; doc.cheio = F.cheio !== false; if (String(F.posto || "").trim()) doc.posto = String(F.posto).trim().slice(0, 60); }
         const guardarHist = HIST_CATS.includes(F.cat) && !F.id && F.hist !== false;
@@ -1945,6 +1974,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       b.querySelector("#fCancel").onclick = closeSheet;
       b.querySelector("#fSave").onclick = async (ev) => {
         const kmIni = intOrNull(b.querySelector("#jKm").value);
+        if (!kmConfere(ev.target, b.querySelector("#fErr"), [kmIni])) return;
         ev.target.disabled = true;
         try { await saveSettings({ jornada: { inicio: Date.now(), kmIni: kmIni || null, carId: carAtivoId() } }); closeSheet(); toast("Boa corrida! O tempo está contando."); }
         catch (e) { ev.target.disabled = false; b.querySelector("#fErr").textContent = dbErrMsg(e); }
@@ -1980,6 +2010,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         const kmP = intOrNull(b.querySelector("#jKp").value);
         if (kmP && kmIni && kmFim && kmP > kmFim - kmIni) { err.textContent = "Os km com passageiro passaram dos km rodados no dia."; return; }
         if (kmP) dia.kmPass = kmP;
+        if (!kmConfere(ev.target, err, [kmIni, kmFim], dia.carId)) return;
         ev.target.disabled = true;
         try {
           await col("dias").add(dia);
@@ -2021,6 +2052,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         if (kmP) doc.kmPass = kmP;
         if (d && d.inicio) { doc.inicio = d.inicio; doc.fim = d.fim; }
         if (d) { if (d.carId) doc.carId = d.carId; } else doc.carId = carAtivoId();
+        if (!kmConfere(ev.target, err, [kmIni, kmFim], cid(doc))) return;
         ev.target.disabled = true;
         try { if (d) await col("dias").doc(d.id).set(doc); else await col("dias").add(doc); closeSheet(); toast("Dia salvo"); }
         catch (e) { ev.target.disabled = false; err.textContent = dbErrMsg(e); }
@@ -2063,6 +2095,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         else if (m && m.custo) doc.custo = m.custo;
         if (m && m.proxData && !feitoHoje) doc.proxData = m.proxData;
         if (!ck && !cm) { err.textContent = "Diga de quantos em quantos km ou meses repetir."; return; }
+        if (!kmConfere(ev.target, err, [uk], m ? cid(m) : carAtivoId())) return;
         ev.target.disabled = true;
         try {
           doc.carId = m ? m.carId : carAtivoId();
@@ -2092,6 +2125,10 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       b.querySelector("#fSave").onclick = async (ev) => {
         const k = intOrNull(b.querySelector("#kK").value);
         if (!k) { b.querySelector("#fErr").textContent = "Digite o KM, por exemplo 46200."; return; }
+        // o app usa o maior KM anotado: se há um maior que este, foi erro de digitação e precisa ser corrigido lá
+        const maior = kmMaiorOnde(k);
+        if (maior) { b.querySelector("#fErr").textContent = "Há um KM maior anotado: " + num(maior[0]) + (maior[1] ? " em " + dBR(maior[1]) : "") + ", em " + maior[2] + ". Se foi erro de digitação, corrija lá e o KM certo volta a valer."; return; }
+        if (!kmConfere(ev.target, b.querySelector("#fErr"), [k])) return;
         ev.target.disabled = true;
         const car = carAtivo();
         // o hodômetro não volta: leituras maiores que a nova eram erro de digitação
@@ -2108,49 +2145,104 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (!S.local || !(S.lanc.length + S.dias.length + S.hist.length)) return null;
     const ult = Number(S.settings.ultimoBackup) || 0;
     const dias = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
-    if (dias != null && dias < 30) return null;
-    return { nome: "Cópia de segurança", txt: dias == null ? "você ainda não salvou nenhuma" : "a última foi há " + dias + " dias", st: "breve", lbl: "Salvar", tab: "resumo" };
+    if (dias != null && dias < 7) return null;
+    return { nome: "Cópia de segurança", txt: dias == null ? "você ainda não salvou nenhuma" : "a última foi há " + dias + " dias", st: "breve", lbl: temGoogle() ? "Salvar no Google" : "Salvar", tab: "resumo" };
   }
-  async function salvarBackup(btn) {
-    if (!S.downloads) return;
+  function dadosCopia() {
     const colecoes = {};
     COLECOES.forEach(([nome, k]) => { colecoes[nome] = S[k].map((x) => ({ ...x })); });
-    const dados = { app: "caixa-do-motorista", versao: 1, criado: new Date().toISOString(), config: S.settings, colecoes };
+    return { app: "caixa-do-motorista", versao: 1, criado: new Date().toISOString(), config: S.settings, colecoes };
+  }
+  const temDados = () => S.lanc.length + S.dias.length + S.hist.length > 0;
+  async function salvarBackup(btn) {
+    if (!S.downloads) return;
+    const dados = dadosCopia();
     btn.disabled = true;
     try {
-      await S.downloads.save({ filename: "caixa-motorista-copia-" + today() + ".json", data: JSON.stringify(dados) });
+      const r = await S.downloads.save({ filename: "rlcar-copia-" + today() + ".json", data: JSON.stringify(dados), compartilhar: true, titulo: "Cópia do RLCAR" });
       await saveSettings({ ultimoBackup: Date.now() }).catch(() => {});
-      toast("Cópia salva. Guarde o arquivo fora do celular também.");
+      toast(r && r.compartilhado ? "Cópia enviada. Guarde onde você acha fácil no celular novo." : "Cópia salva em Downloads. Mande também para o Drive ou o e-mail: se o celular for formatado, ela some junto.");
     } catch (e) {
       if (e && e.code === "unavailable") { S.downloads = null; render(); }
       else if (!(e && (e.code === "cancelled" || e.code === "declined"))) toast("Não foi possível salvar a cópia agora.");
     }
     btn.disabled = false;
   }
+  // ----- cópia no Google Drive do motorista (drive.js; só com o googleClientId em config.js) -----
+  const temGoogle = () => S.local && !!window.googleDrive;
+  const assinatura = () => JSON.stringify(dadosCopia().colecoes);
+  function googleMsg(e) {
+    const c = e && e.code;
+    if (c === "cancelado") return null;
+    if (c === "sem_internet") return "Sem internet agora. Tente de novo quando tiver sinal.";
+    if (c === "sem_permissao") return "O Google não liberou o Drive. Tente de novo e marque a permissão do RLCAR.";
+    if (c === "precisa_tocar") return "Entre de novo com a conta Google.";
+    reportar(e);
+    return "O Google Drive não respondeu. Tente de novo daqui a pouco.";
+  }
+  async function salvarGoogle(btn) {
+    // celular novo ainda vazio: salvar agora apagaria a cópia boa que está no Drive
+    if (!temDados()) { toast("Ainda não há nada para salvar. Se trocou de celular, toque em Restaurar cópia."); return; }
+    if (btn) btn.disabled = true;
+    try {
+      const sig = assinatura();
+      const quando = await window.googleDrive.salvar(JSON.stringify(dadosCopia()), { interativo: true });
+      S.googleSig = sig;
+      await saveSettings({ ultimoBackup: quando, ultimoGoogle: quando }).catch(() => {});
+      toast("Cópia salva no seu Google Drive. Na próxima hora, o que você anotar salva sozinho.");
+    } catch (e) { const m = googleMsg(e); if (m) toast(m); }
+    if (btn) btn.disabled = false;
+  }
+  // depois de um toque em Salvar no Google, o que mudar enquanto a liberação vale (cerca de 1 hora) salva sozinho
+  function agendarGoogle() {
+    if (!temGoogle() || S.googleSig == null || !window.googleDrive.conectado() || !temDados()) return;
+    clearTimeout(agendarGoogle._t);
+    agendarGoogle._t = setTimeout(async () => {
+      const sig = assinatura();
+      if (sig === S.googleSig || !window.googleDrive.conectado()) return;
+      try {
+        const quando = await window.googleDrive.salvar(JSON.stringify(dadosCopia()));
+        S.googleSig = sig;
+        saveSettings({ ultimoBackup: quando, ultimoGoogle: quando }).catch(() => {});
+      } catch (e) { if (e && e.code !== "precisa_tocar" && e.code !== "sem_internet") reportar(e); }
+    }, 4000);
+  }
   function restaurarForm() {
     let dados = null;
     openForm(() => `
-      <div><h2>Restaurar cópia</h2><p class="note">Escolha o arquivo da cópia de segurança (.json). Os dados que estão aqui agora são trocados pelos da cópia.</p></div>
+      <div><h2>Restaurar cópia</h2><p class="note">Escolha o arquivo da cópia de segurança (rlcar-copia ou caixa-motorista-copia, que você guardou no Drive, no WhatsApp ou no e-mail). Os dados que estão aqui agora são trocados pelos da cópia.</p></div>
+      ${temGoogle() ? `<button type="button" class="btn-print" id="gBusca">Buscar no meu Google Drive</button>` : ""}
       <label class="btn-print" for="bkIn">Escolher arquivo</label>
-      <input type="file" id="bkIn" accept=".json,application/json" hidden>
+      <input type="file" id="bkIn" accept=".json,.txt,application/json,text/plain" hidden>
       <p class="hint" id="bkMsg"></p>
       <p class="err" id="fErr"></p>
       <div class="sh-actions"><button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave" disabled>Restaurar</button></div>
     `, (draw, b) => {
       const err = b.querySelector("#fErr"), msg = b.querySelector("#bkMsg"), save = b.querySelector("#fSave");
       b.querySelector("#fCancel").onclick = closeSheet;
+      const usar = (texto) => {
+        const d = JSON.parse(texto);
+        if (!d || d.app !== "caixa-do-motorista" || typeof d.colecoes !== "object") throw new Error("formato");
+        const n = COLECOES.reduce((a, [nome]) => a + (Array.isArray(d.colecoes[nome]) ? d.colecoes[nome].length : 0), 0);
+        dados = d;
+        msg.textContent = "Cópia de " + dBR(String(d.criado || "").slice(0, 10)) + " com " + n + (n === 1 ? " registro." : " registros.");
+        save.disabled = false;
+      };
       b.querySelector("#bkIn").onchange = async (ev) => {
         const f = ev.target.files && ev.target.files[0];
         if (!f) return;
         err.textContent = ""; msg.textContent = ""; dados = null; save.disabled = true;
+        try { usar(await f.text()); } catch (e) { err.textContent = "Esse arquivo não é uma cópia do RLCAR."; }
+      };
+      const gb = b.querySelector("#gBusca");
+      if (gb) gb.onclick = async () => {
+        err.textContent = ""; msg.textContent = "Buscando no Google Drive…"; dados = null; save.disabled = true; gb.disabled = true;
         try {
-          const d = JSON.parse(await f.text());
-          if (!d || d.app !== "caixa-do-motorista" || typeof d.colecoes !== "object") throw new Error("formato");
-          const n = COLECOES.reduce((a, [nome]) => a + (Array.isArray(d.colecoes[nome]) ? d.colecoes[nome].length : 0), 0);
-          dados = d;
-          msg.textContent = "Cópia de " + dBR(String(d.criado || "").slice(0, 10)) + " com " + n + (n === 1 ? " registro." : " registros.");
-          save.disabled = false;
-        } catch (e) { err.textContent = "Esse arquivo não é uma cópia do Caixa do Motorista."; }
+          const texto = await window.googleDrive.baixar({ interativo: true });
+          if (texto == null) msg.textContent = "Não há cópia no Google Drive desta conta. Confira se entrou com a mesma conta do outro celular.";
+          else usar(texto);
+        } catch (e) { msg.textContent = ""; err.textContent = e && e.message === "formato" ? "A cópia do Google Drive veio com defeito. Use um arquivo de cópia." : (googleMsg(e) || ""); }
+        gb.disabled = false;
       };
       save.onclick = async () => {
         if (!dados) return;
@@ -2170,6 +2262,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
           }
           const { jornada, ...cfg } = dados.config && typeof dados.config === "object" ? dados.config : {};
           await S.base.set(limpa({ ...cfg, jornada: S.settings.jornada || undefined }));
+          if (temGoogle() && window.googleDrive.conectado()) S.googleSig = assinatura();
           closeSheet(); toast("Cópia restaurada: " + total + (total === 1 ? " registro" : " registros"));
         } catch (e) { save.disabled = false; save.textContent = "Tentar de novo"; delete save.dataset.armed; err.textContent = dbErrMsg(e); }
       };
@@ -2244,7 +2337,8 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "cidadeBtn") { cidadeForm(); return; }
     if (t.id === "shareApp") { compartilharApp(); return; }
     if (t.id === "bkSave") { salvarBackup(t); return; }
-    if (t.id === "bkLoad") { restaurarForm(); return; }
+    if (t.id === "gSave") { salvarGoogle(t); return; }
+    if (t.id === "bkLoad" || t.id === "bkLoadIni") { restaurarForm(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
     if (t.dataset.lanc) { const x = S.lanc.find((x) => x.id === t.dataset.lanc); if (x) lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); return; }
     if (t.dataset.dia) { const d = S.dias.find((x) => x.id === t.dataset.dia); if (d) diaForm(d); return; }
@@ -2288,6 +2382,16 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (!C || typeof C.use !== "function") { S.offline = true; render(); return; }
     S.local = C === window.localApp;
     if (S.local) $("#offline").textContent = "Este navegador não deixou o app guardar dados. Saia da aba anônima ou libere o armazenamento do site e abra de novo.";
+    // iPhone no Safari (fora do app instalado): os dados ficam separados dos do app da tela inicial
+    const ehIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const instalado = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+    const AVISO_IOS = "caixa-motorista:aviso-ios";
+    let viuAviso = false;
+    try { viuAviso = localStorage.getItem(AVISO_IOS) === "1"; } catch (e) { /* sem armazenamento */ }
+    if (S.local && ehIOS && !instalado && !viuAviso) {
+      $("#iosInst").hidden = false;
+      $("#iosOk").onclick = () => { $("#iosInst").hidden = true; try { localStorage.setItem(AVISO_IOS, "1"); } catch (e) { /* nada */ } };
+    }
     const [db, user] = await Promise.all([C.use("db"), C.use("user")]);
     const uid = user ? await user.id() : null;
     if (!db || !uid) { S.offline = true; render(); return; }
