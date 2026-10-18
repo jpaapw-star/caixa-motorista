@@ -799,9 +799,6 @@ td:first-child { text-transform: capitalize; }
         <div class="lucro num">${loading ? "…" : brl(s.saldo)}</div>
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
-      ${S.local && S.loaded.l && S.loaded.d && !(S.lanc.length + S.dias.length + S.hist.length) ? `<div class="card" id="restIni"><div class="sec-h"><h2>Trocou de celular ou formatou?</h2></div>
-        <p class="note" style="margin:0">${temGoogle() ? "Se você salvou no Google, entre com a mesma conta e traga tudo de volta agora. Também dá para usar um arquivo de cópia." : "Se você salvou uma cópia no Drive, no WhatsApp ou no e-mail, traga tudo de volta agora."}</p>
-        <div class="btn-row"><button class="btn sm primary" id="bkLoadIni"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>` : ""}
       ${jornadaHTML()}
       <div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>
       <div class="sec-h"><h2>Trabalho no mês</h2><small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)} · ${num(s.corridas)} corridas</small></div>
@@ -1663,24 +1660,128 @@ td:first-child { text-transform: capitalize; }
     btn.disabled = false; btn.textContent = old;
   }
 
+  // Tanque (litros) de carros vendidos no Brasil, pela ficha das montadoras: só uma sugestão, a pessoa confere no manual.
+  // [nome no modelo da FIPE, litros, ano inicial, ano final]. Os nomes mais específicos vêm antes ("onix plus" antes de "onix").
+  const TANQUES = [
+    // Chevrolet
+    ["onix plus", 44], ["onix joy", 54], ["onix", 54, 0, 2019], ["onix", 44, 2020], ["prisma", 54], ["cobalt", 54], ["spin", 53],
+    ["tracker", 53, 0, 2020], ["tracker", 44, 2021], ["cruze", 52], ["celta", 54], ["corsa", 54], ["classic", 54], ["agile", 54],
+    ["sonic", 46], ["astra", 52], ["s10", 76],
+    // Hyundai
+    ["hb20s", 50], ["hb20x", 50], ["hb20", 50], ["creta", 50],
+    // Fiat
+    ["grand siena", 48], ["argo", 48], ["cronos", 48], ["mobi", 47], ["uno", 48], ["palio", 48], ["siena", 48], ["strada", 58, 0, 2020], ["strada", 55, 2021],
+    ["toro", 55], ["pulse", 47], ["fastback", 47], ["idea", 48], ["punto", 60], ["doblo", 60],
+    // Volkswagen
+    ["crossfox", 50], ["t cross", 52], ["gol", 55], ["voyage", 55], ["fox", 50], ["polo", 45, 0, 2017], ["polo", 52, 2018],
+    ["virtus", 52], ["nivus", 52], ["saveiro", 55], ["amarok", 80], ["kombi", 45],
+    // Renault
+    ["kwid", 38], ["sandero", 50], ["logan", 50], ["stepway", 50], ["duster", 50], ["captur", 50], ["oroch", 50], ["clio", 50], ["symbol", 50],
+    // Ford
+    ["ka", 51], ["fiesta", 52, 2014], ["ecosport", 52], ["focus", 55], ["ranger", 80],
+    // Toyota
+    ["corolla cross", 47], ["corolla", 50], ["yaris", 45], ["etios", 45], ["hilux", 80], ["sw4", 80],
+    // Honda
+    ["hr v", 50], ["city", 47], ["fit", 46],
+    // Nissan
+    ["versa", 41], ["kicks", 41], ["march", 41], ["sentra", 52], ["frontier", 80],
+    // Peugeot, Citroën e Jeep
+    ["208", 50, 0, 2020], ["208", 47, 2021], ["c3", 47], ["compass", 60],
+    // por último: "up" aparece dentro de outros nomes ("pick up")
+    ["up", 50],
+  ];
+  const tanqueSugerido = (nome, ano) => {
+    const n = " " + semAcento(nome).replace(/[^a-z0-9]+/g, " ") + " ";
+    if (/ pick up | cabine /.test(n) && !/ (strada|saveiro|toro|oroch|s10|hilux|ranger|amarok|frontier) /.test(n)) return null;
+    const t = TANQUES.find(([k, , de, ate]) => n.includes(" " + k + " ") && (!de || !ano || ano >= de) && (!ate || !ano || ano <= ate));
+    return t ? t[1] : null;
+  };
+  // Da escolha na Tabela FIPE tira ano e combustível. A FIPE chama carro flex de "Gasolina", então de 2007 em diante vira Flex.
+  function fichaDaFipe(modeloNome, anoValor, anoNome) {
+    const tipo = String(anoValor || "").split("-")[1];
+    let ano = parseInt(anoNome, 10);
+    if (!(ano >= 1950 && ano <= 2035)) ano = new Date().getFullYear(); // 32000 = zero km
+    const combustivel = tipo === "3" ? "Diesel" : tipo === "2" ? "Etanol" : /flex/i.test(modeloNome) || ano >= 2007 ? "Flex" : "Gasolina";
+    return { modelo: String(modeloNome || "").trim().slice(0, 60), ano, combustivel, tanque: tanqueSugerido(modeloNome, ano) };
+  }
+
   function fichaForm(novo = false) {
     const atual = carAtivo();
     const F = novo ? { combustivel: "Flex" } : { combustivel: "Flex", ...atual };
     if (F.tanque) F.tanqueTxt = num(F.tanque, F.tanque % 1 ? 1 : 0);
+    // busca na Tabela FIPE: escolhendo marca, modelo e ano, o resto se preenche sozinho
+    const P = { marcas: null, modelos: null, anos: null, marca: "", modelo: "", ano: "", filtro: "", busy: "", erro: "", res: null, sel: null, tanqueSug: false };
+    const busca = S.local && !S.offline;
+    const nomeDe = (lista, v, k) => ((lista || []).find((x) => String(x.valor) === String(v)) || {})[k] || "";
+    const filtrados = () => (P.modelos || []).filter((m) => !P.filtro || semAcento(m.modelo).includes(semAcento(P.filtro)));
+    const opModelos = (mods) => `<option value="">${P.modelos ? (mods.length ? "Escolha o modelo (" + mods.length + ")" : "Nenhum modelo com esse nome") : "Carregando…"}</option>` +
+      mods.map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.modelo) ? " selected" : ""}>${esc(m.modelo)}</option>`).join("");
+    let redesenhar = () => {}, meu = -1;
     const read = (b) => { F.modelo = b.querySelector("#cM").value; F.ano = b.querySelector("#cA").value; F.placa = b.querySelector("#cP").value; F.tanqueTxt = b.querySelector("#cT").value; };
+    let lerTela = () => {};
+    const carregar = async (oque) => {
+      lerTela(); P.busy = oque; P.erro = ""; if (formSeq === meu) redesenhar();
+      try {
+        if (oque === "marcas") P.marcas = await fipeGet("/marcas/v1/carros");
+        if (oque === "modelos") P.modelos = await fipeGet("/veiculos/v1/carros/" + encodeURIComponent(P.marca));
+        if (oque === "anos") P.anos = await fipeGet("/anos/v1/carros/" + encodeURIComponent(P.marca) + "/" + encodeURIComponent(P.modelo));
+        if (oque === "valor") {
+          P.res = await fipeConsulta({ marca: P.marca, modelo: P.modelo, ano: P.ano });
+          P.sel = { marca: P.marca, marcaNome: nomeDe(P.marcas, P.marca, "nome"), modelo: P.modelo, modeloNome: nomeDe(P.modelos, P.modelo, "modelo"), ano: P.ano, anoNome: nomeDe(P.anos, P.ano, "nome") };
+        }
+      } catch (e) { P.erro = "Não consegui falar com a Tabela FIPE agora. Dá para digitar os dados abaixo."; }
+      P.busy = "";
+      if (formSeq !== meu || $("#sheet").hidden) return;
+      lerTela(); // guarda o que a pessoa digitou enquanto esperava (placa, tanque)
+      if (oque === "valor" && P.sel) {
+        const d = fichaDaFipe(P.sel.modeloNome, P.ano, P.sel.anoNome);
+        F.modelo = d.modelo; F.ano = d.ano; F.combustivel = d.combustivel;
+        P.tanqueSug = false;
+        if (d.tanque && !String(F.tanqueTxt || "").trim()) { F.tanqueTxt = String(d.tanque); P.tanqueSug = true; }
+      }
+      redesenhar();
+    };
+    const achou = () => !!(P.res && P.sel);
+    const buscaHTML = () => !busca ? "" : achou()
+      ? `<div class="cmp-out" id="cfOk"><span class="label">Seu carro · Tabela FIPE de ${esc(P.res.mes)}</span><b>${esc(F.modelo || "")}</b><span class="num">${esc(F.ano || "")} · ${brl(P.res.valor)}</span>
+          <div class="btn-row"><button type="button" class="btn sm ghost" id="cfTrocar">Trocar o carro</button></div></div>`
+      : `<div class="fld"><span>Buscar o carro (preenche sozinho)</span>
+        <select id="cfMarca"${P.marcas ? "" : " disabled"}><option value="">${P.marcas ? "Escolha a marca" : "Carregando…"}</option>${(P.marcas || []).map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.marca) ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select>
+        ${P.marca && P.modelos && P.modelos.length > 12 ? `<input id="cfFiltro" placeholder="Filtrar, ex.: onix 1.0" value="${esc(P.filtro)}" autocomplete="off">` : ""}
+        ${P.marca ? `<select id="cfModelo"${P.modelos ? "" : " disabled"}>${opModelos(filtrados())}</select>` : ""}
+        ${P.modelo ? `<select id="cfAno"${P.anos ? "" : " disabled"}><option value="">${P.anos ? "Escolha o ano" : "Carregando…"}</option>${(P.anos || []).map((a) => `<option value="${esc(a.valor)}"${String(a.valor) === String(P.ano) ? " selected" : ""}>${esc(a.nome)}</option>`).join("")}</select>` : ""}
+      </div>
+      ${P.busy === "valor" ? `<p class="note" style="margin:0">Buscando os dados…</p>` : ""}
+      ${P.erro ? `<p class="note" style="margin:0">${esc(P.erro)}</p>` : ""}
+      ${P.marcas ? `<p class="hint" style="margin:0">Não achou? Digite abaixo.</p>` : ""}`;
+    // achou na FIPE: modelo e ano já aparecem no resumo de cima, então não se repetem nos campos
+    const camposHTML = () => achou()
+      ? `<input type="hidden" id="cM" value="${esc(F.modelo || "")}"><input type="hidden" id="cA" value="${esc(F.ano || "")}">
+        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label>`
+      : `<label class="fld"><span>Modelo</span><input id="cM" placeholder="Ex.: Onix 1.0 LT" value="${esc(F.modelo || "")}"></label>
+      <div class="row2"><label class="fld"><span>Ano</span><input id="cA" type="number" inputmode="numeric" placeholder="2020" value="${esc(F.ano || "")}"></label>
+        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label></div>`;
     openForm(() => `
       <div><h2>${novo ? "Novo carro" : "Dados do carro"}</h2><p class="note">${novo ? "O carro novo já vem com a lista de manutenção padrão. Você troca de carro tocando no nome dele, na aba Carro." : "Esses dados aparecem na aba Carro e ajudam nas contas de consumo."}</p></div>
-      <label class="fld"><span>Modelo</span><input id="cM" placeholder="Ex.: Onix 1.0 LT" value="${esc(F.modelo || "")}"></label>
-      <div class="row2"><label class="fld"><span>Ano</span><input id="cA" type="number" inputmode="numeric" placeholder="2020" value="${esc(F.ano || "")}"></label>
-        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label></div>
+      ${buscaHTML()}
+      ${camposHTML()}
       <div class="fld"><span>Combustível</span><div class="chips">${["Flex", ...COMBS].map((x) => `<button type="button" class="chip" data-cc="${x}" aria-pressed="${F.combustivel === x}">${x}</button>`).join("")}</div></div>
       <label class="fld"><span>Tamanho do tanque (litros)</span><input id="cT" inputmode="decimal" placeholder="44" value="${esc(F.tanqueTxt || "")}"></label>
-      <p class="hint" style="margin:0">O tamanho do tanque está no manual do carro.</p>
+      <p class="hint" style="margin:0">${achou() && P.tanqueSug ? "Sugestão para este modelo. Confira no manual do carro." : "O tamanho do tanque está no manual do carro."}</p>
       <p class="err" id="fErr"></p>
       <div class="sh-actions">${!novo && atual.id !== PRINCIPAL ? `<button type="button" class="btn ghost danger" id="fDel">Excluir carro</button><span class="spacer"></span>` : ""}<button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>${novo ? "Adicionar carro" : "Salvar"}</button></div>
     `, (draw, b) => {
+      redesenhar = draw;
+      lerTela = () => { if (b.querySelector("#cM")) read(b); };
       b.querySelector("#fCancel").onclick = closeSheet;
       b.querySelectorAll("[data-cc]").forEach((el) => el.onclick = () => { read(b); F.combustivel = el.dataset.cc; draw(); });
+      const sm = b.querySelector("#cfMarca"), so = b.querySelector("#cfModelo"), sa = b.querySelector("#cfAno"), fl = b.querySelector("#cfFiltro");
+      if (sm) sm.onchange = () => { P.marca = sm.value; P.modelo = ""; P.ano = ""; P.modelos = null; P.anos = null; P.res = null; P.sel = null; P.filtro = ""; if (P.marca) carregar("modelos"); else { read(b); draw(); } };
+      if (so) so.onchange = () => { P.modelo = so.value; P.ano = ""; P.anos = null; P.res = null; P.sel = null; if (P.modelo) carregar("anos"); else { read(b); draw(); } };
+      if (sa) sa.onchange = () => { P.ano = sa.value; P.res = null; P.sel = null; if (P.ano) carregar("valor"); else { read(b); draw(); } };
+      if (fl && so) fl.oninput = () => { P.filtro = fl.value; so.innerHTML = opModelos(filtrados()); };
+      const tr = b.querySelector("#cfTrocar");
+      if (tr) tr.onclick = () => { read(b); P.res = null; P.sel = null; P.ano = ""; draw(); };
       const del = b.querySelector("#fDel");
       if (del) del.onclick = () => confirmDelete(del, async () => {
         try {
@@ -1706,15 +1807,23 @@ td:first-child { text-transform: capitalize; }
         ev.target.disabled = true;
         try {
           if (novo) {
-            const ref = await col("carros").add(limpa({ ...doc, custos: {}, ts: Date.now() }));
+            const ts = Date.now();
+            const ref = await col("carros").add(limpa({ ...doc, custos: {}, ts }));
             await criarServicosPadrao(ref.id);
+            if (P.sel && P.res) await fipeAplicar({ id: ref.id, ...doc, custos: {}, ts }, P.sel, P.res);
             await saveSettings({ carroAtivo: ref.id });
             S.carroSub = "consumo";
             closeSheet(); toast(modelo + " adicionado");
-          } else { await salvarCarro(doc, atual); closeSheet(); toast("Carro salvo"); }
+          } else {
+            await salvarCarro(doc, atual);
+            if (P.sel && P.res) await fipeAplicar({ ...atual, ...doc }, P.sel, P.res);
+            closeSheet(); toast("Carro salvo");
+          }
         } catch (e) { ev.target.disabled = false; err.textContent = dbErrMsg(e); }
       };
     });
+    meu = formSeq;
+    if (busca) carregar("marcas");
   }
 
   function renderResumo() {
@@ -1800,6 +1909,10 @@ td:first-child { text-transform: capitalize; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 2, data: "2026-10-18", itens: [
+      "Novo ícone: um carro preto e branco.",
+      "Ao cadastrar o carro, escolha marca, modelo e ano e o app preenche o resto sozinho, com o valor da Tabela FIPE.",
+    ] },
     { v: 1, data: "2026-10-18", itens: [
       "O app agora se chama RLCAR.",
       "Salvar no Google: guarde a cópia dos seus dados no seu Google Drive e traga tudo de volta se trocar de celular ou formatar (em Resumo).",
@@ -2260,6 +2373,8 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
   }
   // depois de um toque em Salvar no Google, o que mudar enquanto a liberação vale (cerca de 1 hora) salva sozinho
   function agendarGoogle() {
+    // reabriu o app ainda com a liberação do Google guardada: volta a salvar sozinho
+    if (S.googleSig == null && temGoogle() && S.settings.ultimoGoogle && window.googleDrive.conectado()) S.googleSig = "";
     if (!temGoogle() || S.googleSig == null || !window.googleDrive.conectado() || !temDados()) return;
     clearTimeout(agendarGoogle._t);
     agendarGoogle._t = setTimeout(async () => {
@@ -2405,7 +2520,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "gSave") { salvarGoogle(t); return; }
     if (t.id === "verTut") { tutorialForm(); return; }
     if (t.id === "verNov") { novidadesForm(NOVIDADES.slice().sort((a, b) => b.v - a.v)); return; }
-    if (t.id === "bkLoad" || t.id === "bkLoadIni") { restaurarForm(); return; }
+    if (t.id === "bkLoad") { restaurarForm(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
     if (t.dataset.lanc) { const x = S.lanc.find((x) => x.id === t.dataset.lanc); if (x) lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); return; }
     if (t.dataset.dia) { const d = S.dias.find((x) => x.id === t.dataset.dia); if (d) diaForm(d); return; }

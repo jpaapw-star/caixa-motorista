@@ -2,7 +2,9 @@
    Só liga quando config.js tem o googleClientId. A cópia fica na pasta escondida do app no Drive
    (appDataFolder): o motorista não vê o arquivo, outros apps não leem, e só este app escreve nela.
    O login do Google precisa de um toque (o navegador bloqueia a janela sem toque). Depois dele,
-   a liberação vale por cerca de 1 hora; nesse tempo o app salva sozinho. */
+   a liberação vale por cerca de 1 hora; nesse tempo o app salva sozinho, mesmo fechando e abrindo
+   de novo (a liberação fica guardada no celular). Da segunda vez em diante o Google não pede de novo
+   a permissão. */
 (() => {
   const cfg = window.CAIXA_CONFIG || {};
   const ID = String(cfg.googleClientId || "").trim();
@@ -11,7 +13,10 @@
   const NOME = "caixa-motorista-copia.json";
   const API = "https://www.googleapis.com/drive/v3/files";
   const UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+  const GUARDA = "caixa-motorista:google";
   let token = null, validade = 0, carregando = null, arquivoId = null;
+  try { const g = JSON.parse(localStorage.getItem(GUARDA) || "null"); if (g && g.t && g.v > Date.now()) { token = g.t; validade = g.v; } } catch (e) { /* sem acesso ao armazenamento */ }
+  const guardar = () => { try { if (token) localStorage.setItem(GUARDA, JSON.stringify({ t: token, v: validade })); else localStorage.removeItem(GUARDA); } catch (e) { /* tudo bem */ } };
 
   const erro = (code, msg) => { const e = new Error(msg || code); e.code = code; return e; };
   const conectado = () => !!token && Date.now() < validade;
@@ -37,6 +42,7 @@
           if (!r || r.error || !r.access_token) return falha(erro(r && r.error === "access_denied" ? "cancelado" : "login"));
           if (google.accounts.oauth2.hasGrantedAllScopes && !google.accounts.oauth2.hasGrantedAllScopes(r, ESCOPO)) return falha(erro("sem_permissao"));
           token = r.access_token; validade = Date.now() + (Number(r.expires_in) || 3600) * 1000 - 60000;
+          guardar();
           ok();
         },
         error_callback: (e) => falha(erro(e && e.type === "popup_closed" ? "cancelado" : "login")),
@@ -53,7 +59,7 @@
     let r;
     try { r = await fetch(url, { ...opcoes, headers: { ...(opcoes.headers || {}), Authorization: "Bearer " + token } }); }
     catch (e) { throw erro("sem_internet"); }
-    if (r.status === 401) { token = null; throw erro("precisa_tocar"); }
+    if (r.status === 401) { token = null; guardar(); throw erro("precisa_tocar"); }
     if (r.status === 403) throw erro("sem_permissao");
     if (!r.ok) throw erro("drive", "Google Drive respondeu " + r.status);
     return r;

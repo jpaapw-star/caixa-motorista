@@ -17,7 +17,7 @@ Fica no GitHub Pages (de graça) e se instala no celular pela tela inicial. Os d
 | `anp.py` | robô que baixa o preço médio dos combustíveis da ANP |
 | `testes.spec.js`, `playwright.config.js`, `package.json` | testes automáticos |
 | `publicar.yml` | o robô do GitHub: testa, atualiza a ANP e publica |
-| `icon-*.png`, `apple-touch-icon.png` | ícones |
+| `icon-*.png`, `apple-touch-icon.png` | ícones (desenho original em `icone.svg`: carro branco no fundo preto) |
 
 ## Primeira vez
 
