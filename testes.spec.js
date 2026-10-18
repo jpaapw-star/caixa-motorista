@@ -439,7 +439,8 @@ test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura
   await expect(page.locator(".lucro")).toContainText("250,00");
 });
 
-test("sem o ID do Google em config.js, os botões do Google ficam escondidos", async ({ page }) => {
+test("sem o ID do Google em config.js, os botões do Google ficam escondidos", async ({ page, context }) => {
+  await context.route(/\/config\.js$/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: 'window.CAIXA_CONFIG = { sentryDsn: "", googleClientId: "" };' }));
   await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }));
   await aba(page, "resumo");
   await expect(page.locator("#bkSave")).toBeVisible();

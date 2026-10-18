@@ -11,5 +11,5 @@ window.CAIXA_CONFIG = {
   // Google Drive (cada motorista guarda a cópia de segurança no Drive dele, entrando com a conta Google).
   // Cole aqui o "ID do cliente" do Google Cloud. Ele termina em .apps.googleusercontent.com e não é segredo.
   // Em branco, os botões do Google ficam escondidos e só vale a cópia em arquivo.
-  googleClientId: "",
+  googleClientId: "249858698384-omg0nidkv0m7s22okp6bltplhlu2ehqc.apps.googleusercontent.com",
 };
