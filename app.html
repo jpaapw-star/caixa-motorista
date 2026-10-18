@@ -369,7 +369,7 @@ td:first-child { text-transform: capitalize; }
     base: null, local: false, settings: {}, lanc: [], dias: [], manut: [],
     loaded: { s: false, l: false, d: false, m: false },
     ym: null, tab: "inicio", offline: false, sample: null, canImg: false, downloads: null,
-    carroSub: "consumo", cmp: {}, anp: null, hist: [], docs: [], cars: [], seps: [], dia: null,
+    carroSub: "consumo", cmp: {}, anp: null, hist: [], docs: [], cars: [], seps: [], dia: null, googleSig: null,
   };
 
   // ---------- utilidades ----------
@@ -546,6 +546,7 @@ td:first-child { text-transform: capitalize; }
     if (S.tab === "historico") renderHistorico();
     if (S.tab === "carro") renderCarro();
     if (S.tab === "resumo") renderResumo();
+    agendarGoogle();
   }
 
   function jornadaHTML() {
@@ -798,7 +799,7 @@ td:first-child { text-transform: capitalize; }
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
       ${S.local && S.loaded.l && S.loaded.d && !(S.lanc.length + S.dias.length + S.hist.length) ? `<div class="card" id="restIni"><div class="sec-h"><h2>Trocou de celular ou formatou?</h2></div>
-        <p class="note" style="margin:0">Se você salvou uma cópia no Drive, no WhatsApp ou no e-mail, traga tudo de volta agora.</p>
+        <p class="note" style="margin:0">${temGoogle() ? "Se você salvou no Google, entre com a mesma conta e traga tudo de volta agora. Também dá para usar um arquivo de cópia." : "Se você salvou uma cópia no Drive, no WhatsApp ou no e-mail, traga tudo de volta agora."}</p>
         <div class="btn-row"><button class="btn sm primary" id="bkLoadIni"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>` : ""}
       ${jornadaHTML()}
       <div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>
@@ -1749,8 +1750,10 @@ td:first-child { text-transform: capitalize; }
       <div class="card"><div class="sec-h"><h2>Ganhos por app em ${mes}</h2></div>${porCat("ganho")}</div>
       <div class="card"><div class="sec-h"><h2>Para onde foi o dinheiro</h2></div>${porCat("gasto")}</div>
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
-        <p class="note" style="margin:0">${S.local ? "Os dados ficam só neste celular. Toque em Salvar cópia e mande para o seu Google Drive, WhatsApp ou e-mail (o app lembra toda semana). Se trocar de celular, formatar ou limpar o navegador, é a cópia que traz tudo de volta: no celular novo, toque em Restaurar cópia e escolha o arquivo." : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + "." : ""}</p>
-        <div class="exports">${S.downloads ? `<button class="btn sm primary" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
+        <p class="note" style="margin:0">${S.local ? (temGoogle()
+          ? "Os dados ficam neste celular. Toque em Salvar no Google para guardar uma cópia no Google Drive da sua conta (o app lembra toda semana). Se trocar de celular ou formatar, entre com a mesma conta em Restaurar cópia e tudo volta."
+          : "Os dados ficam só neste celular. Toque em Salvar cópia e mande para o seu Google Drive, WhatsApp ou e-mail (o app lembra toda semana). Se trocar de celular, formatar ou limpar o navegador, é a cópia que traz tudo de volta: no celular novo, toque em Restaurar cópia e escolha o arquivo.") : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") + "." : ""}</p>
+        <div class="exports">${temGoogle() ? `<button class="btn sm primary" id="gSave"${S.offline ? " disabled" : ""}>Salvar no Google</button>` : ""}${S.downloads ? `<button class="btn sm ${temGoogle() ? "ghost" : "primary"}" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
       ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
         <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
           <div><p class="note" style="margin:0">Mostre este código para outro motorista apontar a câmera do celular, ou mande o link.</p><p class="qr-link">${esc(linkApp())}</p><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
@@ -2143,13 +2146,17 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const ult = Number(S.settings.ultimoBackup) || 0;
     const dias = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
     if (dias != null && dias < 7) return null;
-    return { nome: "Cópia de segurança", txt: dias == null ? "você ainda não salvou nenhuma" : "a última foi há " + dias + " dias", st: "breve", lbl: "Salvar", tab: "resumo" };
+    return { nome: "Cópia de segurança", txt: dias == null ? "você ainda não salvou nenhuma" : "a última foi há " + dias + " dias", st: "breve", lbl: temGoogle() ? "Salvar no Google" : "Salvar", tab: "resumo" };
   }
-  async function salvarBackup(btn) {
-    if (!S.downloads) return;
+  function dadosCopia() {
     const colecoes = {};
     COLECOES.forEach(([nome, k]) => { colecoes[nome] = S[k].map((x) => ({ ...x })); });
-    const dados = { app: "caixa-do-motorista", versao: 1, criado: new Date().toISOString(), config: S.settings, colecoes };
+    return { app: "caixa-do-motorista", versao: 1, criado: new Date().toISOString(), config: S.settings, colecoes };
+  }
+  const temDados = () => S.lanc.length + S.dias.length + S.hist.length > 0;
+  async function salvarBackup(btn) {
+    if (!S.downloads) return;
+    const dados = dadosCopia();
     btn.disabled = true;
     try {
       const r = await S.downloads.save({ filename: "caixa-motorista-copia-" + today() + ".json", data: JSON.stringify(dados), compartilhar: true, titulo: "Cópia do Caixa do Motorista" });
@@ -2161,10 +2168,50 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     }
     btn.disabled = false;
   }
+  // ----- cópia no Google Drive do motorista (drive.js; só com o googleClientId em config.js) -----
+  const temGoogle = () => S.local && !!window.googleDrive;
+  const assinatura = () => JSON.stringify(dadosCopia().colecoes);
+  function googleMsg(e) {
+    const c = e && e.code;
+    if (c === "cancelado") return null;
+    if (c === "sem_internet") return "Sem internet agora. Tente de novo quando tiver sinal.";
+    if (c === "sem_permissao") return "O Google não liberou o Drive. Tente de novo e marque a permissão do Caixa do Motorista.";
+    if (c === "precisa_tocar") return "Entre de novo com a conta Google.";
+    reportar(e);
+    return "O Google Drive não respondeu. Tente de novo daqui a pouco.";
+  }
+  async function salvarGoogle(btn) {
+    // celular novo ainda vazio: salvar agora apagaria a cópia boa que está no Drive
+    if (!temDados()) { toast("Ainda não há nada para salvar. Se trocou de celular, toque em Restaurar cópia."); return; }
+    if (btn) btn.disabled = true;
+    try {
+      const sig = assinatura();
+      const quando = await window.googleDrive.salvar(JSON.stringify(dadosCopia()), { interativo: true });
+      S.googleSig = sig;
+      await saveSettings({ ultimoBackup: quando, ultimoGoogle: quando }).catch(() => {});
+      toast("Cópia salva no seu Google Drive. Na próxima hora, o que você anotar salva sozinho.");
+    } catch (e) { const m = googleMsg(e); if (m) toast(m); }
+    if (btn) btn.disabled = false;
+  }
+  // depois de um toque em Salvar no Google, o que mudar enquanto a liberação vale (cerca de 1 hora) salva sozinho
+  function agendarGoogle() {
+    if (!temGoogle() || S.googleSig == null || !window.googleDrive.conectado() || !temDados()) return;
+    clearTimeout(agendarGoogle._t);
+    agendarGoogle._t = setTimeout(async () => {
+      const sig = assinatura();
+      if (sig === S.googleSig || !window.googleDrive.conectado()) return;
+      try {
+        const quando = await window.googleDrive.salvar(JSON.stringify(dadosCopia()));
+        S.googleSig = sig;
+        saveSettings({ ultimoBackup: quando, ultimoGoogle: quando }).catch(() => {});
+      } catch (e) { if (e && e.code !== "precisa_tocar" && e.code !== "sem_internet") reportar(e); }
+    }, 4000);
+  }
   function restaurarForm() {
     let dados = null;
     openForm(() => `
       <div><h2>Restaurar cópia</h2><p class="note">Escolha o arquivo da cópia de segurança (caixa-motorista-copia, que você guardou no Drive, no WhatsApp ou no e-mail). Os dados que estão aqui agora são trocados pelos da cópia.</p></div>
+      ${temGoogle() ? `<button type="button" class="btn-print" id="gBusca">Buscar no meu Google Drive</button>` : ""}
       <label class="btn-print" for="bkIn">Escolher arquivo</label>
       <input type="file" id="bkIn" accept=".json,.txt,application/json,text/plain" hidden>
       <p class="hint" id="bkMsg"></p>
@@ -2173,18 +2220,29 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     `, (draw, b) => {
       const err = b.querySelector("#fErr"), msg = b.querySelector("#bkMsg"), save = b.querySelector("#fSave");
       b.querySelector("#fCancel").onclick = closeSheet;
+      const usar = (texto) => {
+        const d = JSON.parse(texto);
+        if (!d || d.app !== "caixa-do-motorista" || typeof d.colecoes !== "object") throw new Error("formato");
+        const n = COLECOES.reduce((a, [nome]) => a + (Array.isArray(d.colecoes[nome]) ? d.colecoes[nome].length : 0), 0);
+        dados = d;
+        msg.textContent = "Cópia de " + dBR(String(d.criado || "").slice(0, 10)) + " com " + n + (n === 1 ? " registro." : " registros.");
+        save.disabled = false;
+      };
       b.querySelector("#bkIn").onchange = async (ev) => {
         const f = ev.target.files && ev.target.files[0];
         if (!f) return;
         err.textContent = ""; msg.textContent = ""; dados = null; save.disabled = true;
+        try { usar(await f.text()); } catch (e) { err.textContent = "Esse arquivo não é uma cópia do Caixa do Motorista."; }
+      };
+      const gb = b.querySelector("#gBusca");
+      if (gb) gb.onclick = async () => {
+        err.textContent = ""; msg.textContent = "Buscando no Google Drive…"; dados = null; save.disabled = true; gb.disabled = true;
         try {
-          const d = JSON.parse(await f.text());
-          if (!d || d.app !== "caixa-do-motorista" || typeof d.colecoes !== "object") throw new Error("formato");
-          const n = COLECOES.reduce((a, [nome]) => a + (Array.isArray(d.colecoes[nome]) ? d.colecoes[nome].length : 0), 0);
-          dados = d;
-          msg.textContent = "Cópia de " + dBR(String(d.criado || "").slice(0, 10)) + " com " + n + (n === 1 ? " registro." : " registros.");
-          save.disabled = false;
-        } catch (e) { err.textContent = "Esse arquivo não é uma cópia do Caixa do Motorista."; }
+          const texto = await window.googleDrive.baixar({ interativo: true });
+          if (texto == null) msg.textContent = "Não há cópia no Google Drive desta conta. Confira se entrou com a mesma conta do outro celular.";
+          else usar(texto);
+        } catch (e) { msg.textContent = ""; err.textContent = e && e.message === "formato" ? "A cópia do Google Drive veio com defeito. Use um arquivo de cópia." : (googleMsg(e) || ""); }
+        gb.disabled = false;
       };
       save.onclick = async () => {
         if (!dados) return;
@@ -2204,6 +2262,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
           }
           const { jornada, ...cfg } = dados.config && typeof dados.config === "object" ? dados.config : {};
           await S.base.set(limpa({ ...cfg, jornada: S.settings.jornada || undefined }));
+          if (temGoogle() && window.googleDrive.conectado()) S.googleSig = assinatura();
           closeSheet(); toast("Cópia restaurada: " + total + (total === 1 ? " registro" : " registros"));
         } catch (e) { save.disabled = false; save.textContent = "Tentar de novo"; delete save.dataset.armed; err.textContent = dbErrMsg(e); }
       };
@@ -2278,6 +2337,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "cidadeBtn") { cidadeForm(); return; }
     if (t.id === "shareApp") { compartilharApp(); return; }
     if (t.id === "bkSave") { salvarBackup(t); return; }
+    if (t.id === "gSave") { salvarGoogle(t); return; }
     if (t.id === "bkLoad" || t.id === "bkLoadIni") { restaurarForm(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
     if (t.dataset.lanc) { const x = S.lanc.find((x) => x.id === t.dataset.lanc); if (x) lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); return; }

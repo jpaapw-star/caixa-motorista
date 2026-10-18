@@ -381,6 +381,73 @@ test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta 
   await expect(page.locator("#restIni")).toHaveCount(0);
 });
 
+test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura no celular novo", async ({ page, context }) => {
+  // config com o ID do cliente, login do Google e Drive simulados (o arquivo fica guardado aqui no teste)
+  await context.route(/\/config\.js$/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: 'window.CAIXA_CONFIG = { sentryDsn: "", googleClientId: "123-abc.apps.googleusercontent.com" };' }));
+  await context.route(/accounts\.google\.com\/gsi\/client/, (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: `
+    window.__logins = 0;
+    window.google = { accounts: { oauth2: {
+      hasGrantedAllScopes: () => true,
+      initTokenClient: (o) => ({ requestAccessToken: () => { window.__logins++; setTimeout(() => o.callback({ access_token: "tok", expires_in: 3600 }), 0); } }),
+    } } };` }));
+  const drive = { id: null, texto: null };
+  await context.route(/www\.googleapis\.com/, async (r) => {
+    const req = r.request(), u = new URL(req.url());
+    const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, PATCH" };
+    if (req.method() === "OPTIONS") return r.fulfill({ status: 204, headers: cors });
+    expect(req.headers()["authorization"]).toBe("Bearer tok");
+    const json = (o) => r.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(o) });
+    if (u.pathname === "/drive/v3/files") { expect(u.searchParams.get("spaces")).toBe("appDataFolder"); return json({ files: drive.id ? [{ id: drive.id }] : [] }); }
+    if (u.pathname === "/upload/drive/v3/files" && req.method() === "POST") {
+      const corpo = req.postData();
+      expect(corpo).toContain('"parents":["appDataFolder"]');
+      drive.id = "arq1"; drive.texto = corpo.split("\r\n\r\n")[2].split("\r\n--")[0];
+      return json({ id: drive.id });
+    }
+    if (u.pathname === "/upload/drive/v3/files/arq1" && req.method() === "PATCH") { drive.texto = req.postData(); return json({ id: drive.id }); }
+    if (u.pathname === "/drive/v3/files/arq1") return r.fulfill({ status: 200, contentType: "application/json", headers: cors, body: drive.texto });
+    return r.fulfill({ status: 404, headers: cors, body: "" });
+  });
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 300, sep: 30, ts: 1 }] }));
+  await aba(page, "resumo");
+  await page.click("#gSave");
+  await expect(page.locator("#toast")).toContainText("Google Drive");
+  expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(1);
+  // o que anotar depois salva sozinho, sem novo login
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Lavagem"]');
+  await page.fill("#fValor", "50");
+  await page.click("#fSave");
+  await expect.poll(() => drive.texto && JSON.parse(drive.texto).colecoes.lancamentos.length, { timeout: 15000 }).toBe(2);
+  expect(await page.evaluate(() => window.__logins)).toBe(1);
+  // celular novo: vazio, não deixa salvar por cima da cópia boa, e restaura pelo Google
+  await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
+  await page.reload();
+  await expect(page.locator("#restIni")).toBeVisible();
+  await aba(page, "resumo");
+  await page.click("#gSave");
+  await expect(page.locator("#toast")).toContainText("Ainda não há nada");
+  expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(2);
+  await aba(page, "inicio");
+  await page.click("#bkLoadIni");
+  await page.click("#gBusca");
+  await expect(page.locator("#bkMsg")).toContainText("2 registros");
+  await page.click("#fSave");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  await expect(page.locator(".lucro")).toContainText("250,00");
+});
+
+test("sem o ID do Google em config.js, os botões do Google ficam escondidos", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }));
+  await aba(page, "resumo");
+  await expect(page.locator("#bkSave")).toBeVisible();
+  await expect(page.locator("#gSave")).toHaveCount(0);
+  await page.click("#bkLoad");
+  await expect(page.locator("#gBusca")).toHaveCount(0);
+});
+
 test.describe("no Chrome", () => {
   test.use({ serviceWorkers: "allow" });
 

@@ -7,4 +7,9 @@ window.CAIXA_CONFIG = {
   // Ele começa com https:// e termina com um número, por exemplo: "https://abc123@o456.ingest.us.sentry.io/789"
   // Em branco, o Sentry fica desligado.
   sentryDsn: "",
+
+  // Google Drive (cada motorista guarda a cópia de segurança no Drive dele, entrando com a conta Google).
+  // Cole aqui o "ID do cliente" do Google Cloud. Ele termina em .apps.googleusercontent.com e não é segredo.
+  // Em branco, os botões do Google ficam escondidos e só vale a cópia em arquivo.
+  googleClientId: "",
 };

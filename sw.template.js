@@ -1,9 +1,9 @@
 /* Caixa do Motorista — faz o app abrir sem internet.
    Arquivos do app (e os preços da ANP): tenta a rede primeiro, para pegar a versão nova, e usa a cópia guardada se estiver sem sinal.
    Fontes e biblioteca de PDF (de fora): usa a cópia guardada e atualiza por trás.
-   Tabela FIPE e Sentry não passam por aqui: só funcionam com internet. */
+   Tabela FIPE, Sentry e Google Drive não passam por aqui: só funcionam com internet. */
 const VERSAO = "cm-__VERSAO__";
-const APP = ["./", "./index.html", "./local.js", "./config.js", "./qrcode.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
+const APP = ["./", "./index.html", "./local.js", "./drive.js", "./config.js", "./qrcode.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(APP)).then(() => self.skipWaiting()));

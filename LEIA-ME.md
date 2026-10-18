@@ -9,7 +9,8 @@ Fica no GitHub Pages (de graça) e se instala no celular pela tela inicial. Os d
 |---|---|
 | `app.html` | o app (telas e contas) |
 | `local.js` | guarda os dados no celular |
-| `config.js` | configurações; é aqui que entra o DSN do Sentry |
+| `drive.js` | guarda a cópia de segurança no Google Drive do motorista (liga com o `googleClientId` de `config.js`) |
+| `config.js` | configurações; é aqui que entram o DSN do Sentry e o ID do Google |
 | `qrcode.js` | desenha o QR code do "Indicar para um motorista" |
 | `sw.template.js` | faz o app abrir sem internet |
 | `build.py` | monta o app para publicar |
@@ -48,6 +49,18 @@ Já tinha enviado o pacote antigo (com `index.html` e `sw.js`)? Pode apagar `ind
 - **Preço médio da ANP:** em **Carro → Consumo**, toque em **Escolher cidade**. O app mostra a média da sua cidade (ou do estado, se a cidade não estiver na pesquisa), se o preço subiu ou caiu na semana e quanto você pagou acima ou abaixo da média. Ao anotar um abastecimento, ele também avisa.
 - **Tabela FIPE:** em **Carro → Custos**, toque em **Buscar valor na FIPE** e escolha a marca, o modelo e o ano. O valor do carro e a desvalorização passam a vir da FIPE: quanto esse modelo perdeu em 12 meses. Todo mês, o app atualiza sozinho ao abrir com internet. A consulta é feita na BrasilAPI.
 - **Indicar para um motorista:** em **Resumo**, o QR code com o link do app e o botão **Mandar o link**.
+
+## Cópia no Google Drive do motorista
+
+Com isto ligado, cada motorista toca em **Salvar no Google** (em **Resumo**) e a cópia vai para uma pasta escondida do Google Drive da conta dele. No celular novo ou formatado, ele toca em **Restaurar cópia → Buscar no meu Google Drive**, entra com a mesma conta e tudo volta. Você não guarda dado de ninguém e não paga nada.
+
+1. Abra https://console.cloud.google.com e crie um projeto chamado "Caixa do Motorista".
+2. Em **APIs e serviços → Biblioteca**, procure **Google Drive API** e toque em **Ativar**.
+3. Em **Tela de permissão OAuth** (ou **Google Auth Platform**), escolha **Externo** e preencha o nome do app e o seu e-mail. Em **Público**, toque em **Publicar app**. Sem isso, só 100 pessoas de teste conseguem entrar e o login vence em 7 dias.
+4. Em **Clientes → Criar cliente**, escolha **Aplicativo da Web**. Em **Origens JavaScript autorizadas**, coloque o endereço do app sem o caminho, por exemplo `https://seunome.github.io`.
+5. Copie o **ID do cliente** (termina em `.apps.googleusercontent.com`). No GitHub, abra `config.js` e cole entre as aspas de `googleClientId: ""`. Toque em **Commit changes**.
+
+Bom saber: o Google pede um toque para entrar (o navegador bloqueia a janela sem toque). Depois disso, por cerca de 1 hora, o que o motorista anotar salva sozinho. A cópia em arquivo continua lá como plano B.
 
 ## Sentry (avisos de erro)
 
