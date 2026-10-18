@@ -1,4 +1,4 @@
-/* Configurações do Caixa do Motorista publicado.
+/* Configurações do RL publicado.
    Para mudar: abra este arquivo no GitHub, toque no lápis (Edit), troque o valor e toque em "Commit changes".
    O robô publica a versão nova sozinho em 1 ou 2 minutos. */
 window.CAIXA_CONFIG = {

@@ -1,4 +1,4 @@
-# Robô do Caixa do Motorista.
+# Robô do RL.
 # - Toda vez que você muda um arquivo: testa o app e, se passar, publica no GitHub Pages.
 # - Toda proposta de mudança (pull request): só testa, sem publicar, para você ver se está tudo certo antes do merge.
 # - Toda terça à noite e quinta de manhã: baixa o preço médio dos combustíveis da ANP, testa e publica.

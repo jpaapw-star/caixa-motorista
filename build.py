@@ -67,7 +67,7 @@ index = f"""<!doctype html>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Caixa Motorista">
+<meta name="apple-mobile-web-app-title" content="RL">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 {cab}
 </head>
@@ -78,8 +78,8 @@ index = f"""<!doctype html>
 """
 
 manifest = {
-    "name": "Caixa do Motorista",
-    "short_name": "Caixa Motorista",
+    "name": "RL",
+    "short_name": "RL",
     "description": "Ganhos, gastos, combustível e manutenção do carro para motoristas de aplicativo.",
     "lang": "pt-BR",
     "id": "./",

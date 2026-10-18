@@ -1,4 +1,4 @@
-/* Caixa do Motorista — cópia de segurança no Google Drive do próprio motorista.
+/* RL — cópia de segurança no Google Drive do próprio motorista.
    Só liga quando config.js tem o googleClientId. A cópia fica na pasta escondida do app no Drive
    (appDataFolder): o motorista não vê o arquivo, outros apps não leem, e só este app escreve nela.
    O login do Google precisa de um toque (o navegador bloqueia a janela sem toque). Depois dele,

@@ -1,4 +1,4 @@
-/* Caixa do Motorista — dados guardados no próprio aparelho.
+/* RL — dados guardados no próprio aparelho.
    Imita a pequena parte do banco de dados que o app usa (doc, collection, onSnapshot, add, set, delete)
    e guarda tudo no armazenamento do navegador. Nada sai do celular. */
 (() => {

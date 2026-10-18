@@ -1,4 +1,4 @@
-/* Caixa do Motorista — faz o app abrir sem internet.
+/* RL — faz o app abrir sem internet.
    Arquivos do app (e os preços da ANP): tenta a rede primeiro, para pegar a versão nova, e usa a cópia guardada se estiver sem sinal.
    Fontes e biblioteca de PDF (de fora): usa a cópia guardada e atualiza por trás.
    Tabela FIPE, Sentry e Google Drive não passam por aqui: só funcionam com internet. */
