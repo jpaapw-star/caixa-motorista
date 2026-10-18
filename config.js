@@ -6,7 +6,7 @@ window.CAIXA_CONFIG = {
   // Cole aqui, entre as aspas, o DSN do seu projeto no Sentry: Settings > Projects > (seu projeto) > Client Keys (DSN).
   // Ele começa com https:// e termina com um número, por exemplo: "https://abc123@o456.ingest.us.sentry.io/789"
   // Em branco, o Sentry fica desligado.
-  sentryDsn: "",
+  sentryDsn: "https://1a4bd5fe177900fbb4cbde862ab165b7@o4512274777047040.ingest.us.sentry.io/4512274805227520",
 
   // Google Drive (cada motorista guarda a cópia de segurança no Drive dele, entrando com a conta Google).
   // Cole aqui o "ID do cliente" do Google Cloud. Ele termina em .apps.googleusercontent.com e não é segredo.

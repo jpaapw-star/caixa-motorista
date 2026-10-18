@@ -302,6 +302,7 @@ test("QR code para indicar o app", async ({ page }) => {
 });
 
 test("Sentry só liga quando o DSN está em config.js", async ({ page, context }) => {
+  await page.route(/config\.js$/, (r) => r.fulfill({ contentType: "application/javascript", body: 'window.CAIXA_CONFIG = { sentryDsn: "" };' }));
   await abrir(page);
   expect(await page.evaluate(() => window.__sentry || 0)).toBe(0);
   const outra = await context.newPage();
@@ -311,6 +312,12 @@ test("Sentry só liga quando o DSN está em config.js", async ({ page, context }
   await pedido;
   await expect.poll(() => outra.evaluate(() => window.__sentry || 0)).toBe(1);
   expect(await outra.evaluate(() => typeof window.sentryOnLoad)).toBe("function");
+});
+
+test("o config.js publicado liga o Sentry do RLCAR", async ({ page }) => {
+  const pedido = page.waitForRequest(/js\.sentry-cdn\.com\/1a4bd5fe177900fbb4cbde862ab165b7\.min\.js/);
+  await abrir(page);
+  await pedido;
 });
 
 test("cópia de segurança: salva e restaura em outro celular", async ({ page }, info) => {
