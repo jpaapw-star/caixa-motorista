@@ -357,7 +357,7 @@ test("cópia de segurança: salva e restaura em outro celular", async ({ page },
   await expect(page.locator("#fSave")).toBeDisabled();
 });
 
-test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta pela primeira tela", async ({ page }) => {
+test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta pelo Resumo", async ({ page }) => {
   // menu de compartilhar como o do Chrome no Android: aceita texto, recusa .json
   await page.addInitScript(() => {
     Object.defineProperty(Navigator.prototype, "canShare", { configurable: true, value: (d) => !!(d && d.files && /\.txt$/.test(d.files[0].name)) });
@@ -376,19 +376,20 @@ test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta 
   expect(JSON.parse(enviado.texto).colecoes.lancamentos).toHaveLength(1);
   await aba(page, "inicio");
   await expect(page.locator(".alerts")).toHaveCount(0);
-  // formatou: o app abre vazio e oferece restaurar logo na primeira tela
+  // formatou: o app abre vazio, sem aviso no início, e a cópia volta pelo Resumo
   await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
   await page.reload();
   await page.click("#tutPular");
-  await expect(page.locator("#restIni")).toBeVisible();
-  await page.click("#bkLoadIni");
+  await expect(page.locator("#restIni")).toHaveCount(0);
+  await aba(page, "resumo");
+  await page.click("#bkLoad");
   await page.setInputFiles("#bkIn", { name: enviado.nome, mimeType: "text/plain", buffer: Buffer.from(enviado.texto) });
   await expect(page.locator("#bkMsg")).toContainText("1 registro");
   await page.click("#fSave");
   await page.click("#fSave");
   await expect(page.locator("#sheet")).toBeHidden();
+  await aba(page, "inicio");
   await expect(page.locator(".lucro")).toContainText("300,00");
-  await expect(page.locator("#restIni")).toHaveCount(0);
 });
 
 test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura no celular novo", async ({ page, context }) => {
@@ -431,23 +432,31 @@ test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura
   await page.click("#fSave");
   await expect.poll(() => drive.texto && JSON.parse(drive.texto).colecoes.lancamentos.length, { timeout: 15000 }).toBe(2);
   expect(await page.evaluate(() => window.__logins)).toBe(1);
+  // fechou e abriu o app dentro da hora: continua salvando sozinho, sem pedir login
+  await page.reload();
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Lavagem"]');
+  await page.fill("#fValor", "20");
+  await page.click("#fSave");
+  await expect.poll(() => JSON.parse(drive.texto).colecoes.lancamentos.length, { timeout: 15000 }).toBe(3);
+  expect(await page.evaluate(() => window.__logins || 0)).toBe(0);
   // celular novo: vazio, não deixa salvar por cima da cópia boa, e restaura pelo Google
   await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
   await page.reload();
   await page.click("#tutPular");
-  await expect(page.locator("#restIni")).toBeVisible();
   await aba(page, "resumo");
   await page.click("#gSave");
   await expect(page.locator("#toast")).toContainText("Ainda não há nada");
-  expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(2);
-  await aba(page, "inicio");
-  await page.click("#bkLoadIni");
+  expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(3);
+  await page.click("#bkLoad");
   await page.click("#gBusca");
-  await expect(page.locator("#bkMsg")).toContainText("2 registros");
+  await expect(page.locator("#bkMsg")).toContainText("3 registros");
   await page.click("#fSave");
   await page.click("#fSave");
   await expect(page.locator("#sheet")).toBeHidden();
-  await expect(page.locator(".lucro")).toContainText("250,00");
+  await aba(page, "inicio");
+  await expect(page.locator(".lucro")).toContainText("230,00");
 });
 
 test("sem o ID do Google em config.js, os botões do Google ficam escondidos", async ({ page, context }) => {
@@ -489,6 +498,7 @@ test("quem já usava e ficou sem abrir vê as novidades uma vez, sem o tutorial"
   await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }, { tutorialVisto: undefined, novidadesVistas: 0 }));
   await expect(page.locator("#novTit")).toBeVisible();
   await expect(page.locator("#sheet")).toContainText("RLCAR");
+  await expect(page.locator("#sheet")).toContainText("Novo ícone"); // as duas atualizações juntas
   await expect(page.locator("#tutTit")).toHaveCount(0);
   await page.click("#novOk");
   await page.reload();
@@ -517,4 +527,28 @@ test.describe("no Chrome", () => {
     const r = await cdp.send("Page.getInstallabilityErrors");
     expect(r.installabilityErrors).toEqual([]);
   });
+});
+
+test("novo carro: escolhendo marca, modelo e ano na FIPE, o resto se preenche sozinho", async ({ page }) => {
+  await abrir(page, dados());
+  await aba(page, "carro");
+  await page.click("#addCar");
+  await page.selectOption("#cfMarca", "23");
+  await page.fill("#cfFiltro", "onix");
+  await page.selectOption("#cfModelo", "9001");
+  await page.fill("#cP", "abc1d23");
+  await page.selectOption("#cfAno", "2020-1");
+  await expect(page.locator("#cfOk")).toContainText("60.000,00");
+  await expect(page.locator("#cM")).toHaveValue("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
+  await expect(page.locator("#cA")).toHaveValue("2020");
+  await expect(page.locator("#cT")).toHaveValue("44");
+  await expect(page.locator("#cP")).toHaveValue("abc1d23");
+  await expect(page.locator('[data-cc="Flex"]')).toHaveAttribute("aria-pressed", "true");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  const carro = Object.entries(await lerLoja(page)).find(([k, v]) => k.includes("/carros/") && v && v.placa === "ABC1D23")[1];
+  expect(carro.ano).toBe(2020);
+  expect(carro.tanque).toBe(44);
+  expect(carro.fipe.valor).toBe(60000);
+  expect(carro.custos.valorCarro).toBe(60000);
 });
