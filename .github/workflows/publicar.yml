@@ -1,11 +1,14 @@
 # Robô do Caixa do Motorista.
 # - Toda vez que você muda um arquivo: testa o app e, se passar, publica no GitHub Pages.
+# - Toda proposta de mudança (pull request): só testa, sem publicar, para você ver se está tudo certo antes do merge.
 # - Toda terça à noite e quinta de manhã: baixa o preço médio dos combustíveis da ANP, testa e publica.
 # Se algo der errado, o GitHub manda um e-mail para você.
 name: Testar e publicar
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   schedule:
     - cron: "30 21 * * 2" # terça, 18h30 de Brasília (a ANP costuma publicar a semana nova na terça)
@@ -18,12 +21,14 @@ permissions:
   id-token: write
 
 concurrency:
-  group: publicar
+  # cada proposta testa no seu canto, sem atrasar nem cancelar a publicação
+  group: ${{ github.event_name == 'pull_request' && format('teste-{0}', github.ref) || 'publicar' }}
   cancel-in-progress: false
 
 jobs:
   anp:
     name: Preços da ANP
+    if: ${{ github.event_name != 'pull_request' }} # numa proposta, usa os preços que já estão no repositório
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -79,6 +84,7 @@ jobs:
             test-results
           retention-days: 7
       - uses: actions/upload-pages-artifact@v5
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           path: dist
 
@@ -120,9 +126,9 @@ jobs:
     # Por enquanto só o teste do Android segura a publicação; o do iPhone avisa por e-mail se falhar.
     # Para o do iPhone também segurar, troque as duas linhas abaixo por:
     #   needs: [android, iphone]
-    #   if: ${{ !cancelled() && needs.android.result == 'success' && needs.iphone.result == 'success' }}
+    #   if: ${{ !cancelled() && needs.android.result == 'success' && needs.iphone.result == 'success' && github.event_name != 'pull_request' }}
     needs: android
-    if: ${{ !cancelled() && needs.android.result == 'success' }}
+    if: ${{ !cancelled() && needs.android.result == 'success' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

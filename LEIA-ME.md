@@ -37,6 +37,7 @@ Já tinha enviado o pacote antigo (com `index.html` e `sw.js`)? Pode apagar `ind
 ## O que o robô faz sozinho
 
 - **Toda vez que você muda um arquivo:** monta o app, roda os testes num Android e num iPhone simulados e, se o teste do Android passar, publica.
+- **Toda proposta de mudança (pull request):** roda os mesmos testes, sem publicar. Assim você vê se está tudo certo antes de tocar em **Merge**.
   Por enquanto, o teste do iPhone só avisa por e-mail se falhar, sem segurar a publicação. Depois que ele passar algumas vezes, dá para fazer ele segurar também: veja o comentário no fim de `publicar.yml`.
 - **Toda terça à noite e quinta de manhã:** baixa a pesquisa semanal de preços da ANP, grava em `dados/anp.json`, testa e publica.
 - **Se algo der errado:** o GitHub manda um e-mail. Em **Actions**, abra a rodada vermelha para ver qual teste falhou.
