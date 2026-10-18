@@ -547,6 +547,7 @@ td:first-child { text-transform: capitalize; }
     if (S.tab === "carro") renderCarro();
     if (S.tab === "resumo") renderResumo();
     agendarGoogle();
+    talvezBoasVindas();
   }
 
   function jornadaHTML() {
@@ -1754,6 +1755,8 @@ td:first-child { text-transform: capitalize; }
           ? "Os dados ficam neste celular. Toque em Salvar no Google para guardar uma cópia no Google Drive da sua conta (o app lembra toda semana). Se trocar de celular ou formatar, entre com a mesma conta em Restaurar cópia e tudo volta."
           : "Os dados ficam só neste celular. Toque em Salvar cópia e mande para o seu Google Drive, WhatsApp ou e-mail (o app lembra toda semana). Se trocar de celular, formatar ou limpar o navegador, é a cópia que traz tudo de volta: no celular novo, toque em Restaurar cópia e escolha o arquivo.") : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") + "." : ""}</p>
         <div class="exports">${temGoogle() ? `<button class="btn sm primary" id="gSave"${S.offline ? " disabled" : ""}>Salvar no Google</button>` : ""}${S.downloads ? `<button class="btn sm ${temGoogle() ? "ghost" : "primary"}" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
+      <div class="card"><div class="sec-h"><h2>Ajuda</h2></div>
+        <div class="exports"><button class="btn sm ghost" id="verTut">Ver o tutorial</button><button class="btn sm ghost" id="verNov">Novidades</button></div></div>
       ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
         <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
           <div><p class="note" style="margin:0">Mostre este código para outro motorista apontar a câmera do celular, ou mande o link.</p><p class="qr-link">${esc(linkApp())}</p><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
@@ -1788,7 +1791,69 @@ td:first-child { text-transform: capitalize; }
   async function saveSettings(patch) {
     const next = { ...S.settings, ...patch };
     Object.keys(next).forEach((k) => { if (next[k] === undefined) delete next[k]; });
+    // já vale aqui: duas gravações seguidas (antes do aviso do banco chegar) não apagam uma à outra
+    S.settings = next;
     await S.base.set(next);
+  }
+
+  // ----- tutorial da primeira vez e novidades das atualizações -----
+  // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
+  // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
+  const NOVIDADES = [
+    { v: 1, data: "2026-10-18", itens: [
+      "O app agora se chama RLCAR.",
+      "Salvar no Google: guarde a cópia dos seus dados no seu Google Drive e traga tudo de volta se trocar de celular ou formatar (em Resumo).",
+      "O app confere o KM quando ele pula demais, para um zero a mais não bagunçar os avisos de manutenção.",
+      "Lembrete da cópia de segurança toda semana.",
+    ] },
+  ];
+  const TUTORIAL = [
+    { t: "Bem-vindo ao RLCAR", txt: "Aqui você controla quanto ganha, quanto gasta e quanto o carro custa de verdade. Tudo fica guardado no seu celular." },
+    { t: "Anote ganhos e gastos", txt: "Toque no botão + amarelo, embaixo, para anotar um ganho (Uber, 99, iFood…) ou um gasto (combustível, manutenção, lavagem…). Na tela Início aparece o seu lucro do mês." },
+    { t: "Marque o dia de trabalho", txt: "Toque em Começar a trabalhar quando sair e em Encerrar quando parar. O app calcula quanto você ganha por hora e por km." },
+    { t: "Caixinha do carro", txt: "O app mostra quanto separar de cada ganho para pagar pneus, óleo, seguro e IPVA sem susto." },
+    { t: "Cuide do carro", txt: "Na aba Carro você vê o consumo, compara o preço do combustível com a média da sua cidade, recebe aviso das manutenções e dos documentos e consulta o valor do carro na FIPE." },
+    { t: "Não perca seus dados", txt: "Na aba Resumo, toque em Salvar no Google (ou Salvar cópia) de vez em quando. Se trocar de celular ou formatar, é a cópia que traz tudo de volta." },
+  ];
+  const ultimaNovidade = () => Math.max(0, ...NOVIDADES.map((n) => n.v));
+  function tutorialForm() {
+    let i = 0;
+    openForm(() => {
+      const p = TUTORIAL[i], fim = i === TUTORIAL.length - 1;
+      return `
+      <div><small class="note" style="margin:0">${i + 1} de ${TUTORIAL.length}</small><h2 id="tutTit">${esc(p.t)}</h2><p class="note">${esc(p.txt)}</p></div>
+      ${fim ? `<button type="button" class="btn ghost" id="tutRest">Já usava em outro celular? Restaurar cópia</button>` : ""}
+      <div class="sh-actions">${fim ? "" : `<button type="button" class="btn ghost" id="tutPular">Pular</button>`}<span class="spacer"></span>
+        ${i ? `<button type="button" class="btn ghost" id="tutVolta">Voltar</button>` : ""}<button type="button" class="btn primary" id="tutProx">${fim ? "Começar" : "Próximo"}</button></div>`;
+    }, (draw, b) => {
+      const pular = b.querySelector("#tutPular"); if (pular) pular.onclick = closeSheet;
+      const volta = b.querySelector("#tutVolta"); if (volta) volta.onclick = () => { i--; draw(); };
+      b.querySelector("#tutProx").onclick = () => { if (i < TUTORIAL.length - 1) { i++; draw(); } else closeSheet(); };
+      const rest = b.querySelector("#tutRest"); if (rest) rest.onclick = () => { closeSheet(); restaurarForm(); };
+    });
+  }
+  function novidadesForm(lista, titulo = "Novidades do RLCAR") {
+    openForm(() => `
+      <div><h2 id="novTit">${esc(titulo)}</h2>${lista.map((n) => `<p class="note" style="margin:10px 0 4px"><b>${esc(dBR(n.data))}</b></p><ul class="note" style="margin:0;padding-left:20px">${n.itens.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`).join("")}</div>
+      <div class="sh-actions"><span class="spacer"></span><button type="button" class="btn primary" id="novOk">Entendi</button></div>`,
+    (draw, b) => { b.querySelector("#novOk").onclick = closeSheet; });
+  }
+  // na primeira abertura: tutorial; depois: as novidades que o motorista ainda não viu, todas juntas
+  let boasVindasFeito = false;
+  function talvezBoasVindas() {
+    if (boasVindasFeito || !S.base || !S.loaded.s || !S.loaded.l || !S.loaded.d || S.offline || !$("#sheet").hidden) return;
+    boasVindasFeito = true;
+    const ult = ultimaNovidade();
+    if (!S.settings.tutorialVisto && !temDados()) {
+      saveSettings({ tutorialVisto: true, novidadesVistas: ult }).catch(() => {});
+      tutorialForm();
+      return;
+    }
+    // quem já usava antes do tutorial existir vai direto para as novidades
+    const vistas = Number(S.settings.novidadesVistas) || 0;
+    const novas = NOVIDADES.filter((n) => n.v > vistas).sort((a, b) => b.v - a.v);
+    if (!S.settings.tutorialVisto || novas.length) saveSettings({ tutorialVisto: true, novidadesVistas: ult }).catch(() => {});
+    if (novas.length) novidadesForm(novas, novas.length > 1 ? "O que mudou desde a sua última visita" : "Novidades do RLCAR");
   }
 
   // ----- lançamento -----
@@ -2338,6 +2403,8 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "shareApp") { compartilharApp(); return; }
     if (t.id === "bkSave") { salvarBackup(t); return; }
     if (t.id === "gSave") { salvarGoogle(t); return; }
+    if (t.id === "verTut") { tutorialForm(); return; }
+    if (t.id === "verNov") { novidadesForm(NOVIDADES.slice().sort((a, b) => b.v - a.v)); return; }
     if (t.id === "bkLoad" || t.id === "bkLoadIni") { restaurarForm(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
     if (t.dataset.lanc) { const x = S.lanc.find((x) => x.id === t.dataset.lanc); if (x) lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); return; }

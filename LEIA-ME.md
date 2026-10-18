@@ -50,6 +50,10 @@ Já tinha enviado o pacote antigo (com `index.html` e `sw.js`)? Pode apagar `ind
 - **Tabela FIPE:** em **Carro → Custos**, toque em **Buscar valor na FIPE** e escolha a marca, o modelo e o ano. O valor do carro e a desvalorização passam a vir da FIPE: quanto esse modelo perdeu em 12 meses. Todo mês, o app atualiza sozinho ao abrir com internet. A consulta é feita na BrasilAPI.
 - **Indicar para um motorista:** em **Resumo**, o QR code com o link do app e o botão **Mandar o link**.
 
+## Tutorial e novidades
+
+Na primeira vez que alguém abre o app, aparece um tutorial curto com as funções principais. Quando sai uma atualização que o motorista deve conhecer, acrescente um item no começo da lista `NOVIDADES` em `app.html`, com o próximo número em `v`. Quem abrir o app depois vê as novidades uma vez. Quem ficou muito tempo sem abrir vê todas as que perdeu juntas, numa tela só. Em **Resumo → Ajuda** dá para rever o tutorial e as novidades.
+
 ## Cópia no Google Drive do motorista
 
 Com isto ligado, cada motorista toca em **Salvar no Google** (em **Resumo**) e a cópia vai para uma pasta escondida do Google Drive da conta dele. No celular novo ou formatado, ele toca em **Restaurar cópia → Buscar no meu Google Drive**, entra com a mesma conta e tudo volta. Você não guarda dado de ninguém e não paga nada.

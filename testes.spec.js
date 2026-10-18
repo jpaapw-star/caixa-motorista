@@ -7,6 +7,7 @@ const { test, expect } = require("@playwright/test");
 const CHAVE = "caixa-motorista:dados:v1"; // onde o app guarda os dados no celular (local.js)
 const BASE = "data/users/local/app";
 const FUSO = "America/Sao_Paulo";
+const JA_VIU = { tutorialVisto: true, novidadesVistas: 999 }; // sem tutorial nem novidades no caminho dos testes
 
 // datas no fuso de Brasília, o mesmo dos celulares simulados
 function dia(n = 0) {
@@ -22,13 +23,13 @@ function emMeses(n) {
 
 // monta os dados que o app encontra ao abrir (como se o motorista já tivesse usado)
 function dados(colecoes = {}, ajustes = {}) {
-  const loja = { [BASE]: { servicosPadrao: true, ...ajustes } };
+  const loja = { [BASE]: { servicosPadrao: true, ...JA_VIU, ...ajustes } };
   for (const [nome, docs] of Object.entries(colecoes)) {
     docs.forEach((d, i) => { const { id = nome + i, ...resto } = d; loja[`${BASE}/${nome}/${id}`] = resto; });
   }
   return loja;
 }
-async function abrir(page, loja) {
+async function abrir(page, loja = { [BASE]: { ...JA_VIU } }) {
   if (loja) {
     // grava só na primeira abertura da aba; depois de recarregar, valem os dados que o app salvou
     await page.addInitScript(([k, v]) => {
@@ -329,6 +330,7 @@ test("cópia de segurança: salva e restaura em outro celular", async ({ page },
   // "outro celular": apaga tudo e restaura pela cópia
   await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
   await page.reload();
+  await page.click("#tutPular");
   await expect(page.locator(".lucro")).toContainText("0,00");
   await aba(page, "resumo");
   await page.click("#bkLoad");
@@ -370,6 +372,7 @@ test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta 
   // formatou: o app abre vazio e oferece restaurar logo na primeira tela
   await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
   await page.reload();
+  await page.click("#tutPular");
   await expect(page.locator("#restIni")).toBeVisible();
   await page.click("#bkLoadIni");
   await page.setInputFiles("#bkIn", { name: enviado.nome, mimeType: "text/plain", buffer: Buffer.from(enviado.texto) });
@@ -424,6 +427,7 @@ test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura
   // celular novo: vazio, não deixa salvar por cima da cópia boa, e restaura pelo Google
   await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
   await page.reload();
+  await page.click("#tutPular");
   await expect(page.locator("#restIni")).toBeVisible();
   await aba(page, "resumo");
   await page.click("#gSave");
@@ -447,6 +451,43 @@ test("sem o ID do Google em config.js, os botões do Google ficam escondidos", a
   await expect(page.locator("#gSave")).toHaveCount(0);
   await page.click("#bkLoad");
   await expect(page.locator("#gBusca")).toHaveCount(0);
+});
+
+test("primeira vez: tutorial; depois, as novidades que ficaram para trás aparecem juntas", async ({ page }) => {
+  await abrir(page, null);
+  await expect(page.locator("#tutTit")).toHaveText("Bem-vindo ao RLCAR");
+  await page.click("#tutProx");
+  await expect(page.locator("#tutTit")).toContainText("ganhos e gastos");
+  await page.click("#tutVolta");
+  await expect(page.locator("#tutTit")).toHaveText("Bem-vindo ao RLCAR");
+  for (let i = 0; i < 5; i++) await page.click("#tutProx");
+  await expect(page.locator("#tutRest")).toBeVisible();
+  await page.click("#tutProx"); // Começar
+  await expect(page.locator("#sheet")).toBeHidden();
+  // quem acabou de chegar não vê as novidades antigas, nem o tutorial de novo
+  await page.reload();
+  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await page.waitForTimeout(300);
+  await expect(page.locator("#sheet")).toBeHidden();
+  // no Resumo dá para rever
+  await aba(page, "resumo");
+  await page.click("#verNov");
+  await expect(page.locator("#novTit")).toBeVisible();
+  await page.click("#novOk");
+  await page.click("#verTut");
+  await expect(page.locator("#tutTit")).toHaveText("Bem-vindo ao RLCAR");
+});
+
+test("quem já usava e ficou sem abrir vê as novidades uma vez, sem o tutorial", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }, { tutorialVisto: undefined, novidadesVistas: 0 }));
+  await expect(page.locator("#novTit")).toBeVisible();
+  await expect(page.locator("#sheet")).toContainText("RLCAR");
+  await expect(page.locator("#tutTit")).toHaveCount(0);
+  await page.click("#novOk");
+  await page.reload();
+  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await page.waitForTimeout(300);
+  await expect(page.locator("#sheet")).toBeHidden();
 });
 
 test.describe("no Chrome", () => {
