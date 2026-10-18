@@ -142,6 +142,48 @@ test("lança ganho e abastecimento, e os dados continuam depois de fechar", asyn
   expect(Object.keys(loja).filter((k) => k.includes("/lancamentos/"))).toHaveLength(2);
 });
 
+test("KM com um zero a mais pede confirmação, e a tela de KM mostra onde está o erro", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(-5), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 200, litros: 33, km: 50000, ts: 1 }] }));
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Combustível"]');
+  await page.fill("#fValor", "150");
+  await page.fill("#fLit", "25");
+  await page.fill("#fKm", "500000");
+  await page.click("#fSave");
+  await expect(page.locator("#fErr")).toContainText("Confira o painel");
+  await expect(page.locator("#sheet")).toBeVisible();
+  await page.click("#fSave"); // estava certo: segundo toque salva
+  await expect(page.locator("#sheet")).toBeHidden();
+  // corrigir pela tela de KM não adianta: ela aponta o lançamento com o KM maior
+  await aba(page, "carro");
+  await page.click("#setKm");
+  await page.fill("#kK", "50500");
+  await page.click("#fSave");
+  await expect(page.locator("#fErr")).toContainText("500.000");
+  await expect(page.locator("#fErr")).toContainText("Histórico");
+  // um KM normal salva de primeira
+  await page.click("#fCancel");
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Combustível"]');
+  await page.fill("#fValor", "100");
+  await page.fill("#fKm", "500400");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+});
+
+test("no iPhone, pelo Safari, avisa para instalar antes de anotar", async ({ page, browserName }) => {
+  await abrir(page);
+  if (browserName !== "webkit") { await expect(page.locator("#iosInst")).toBeHidden(); return; }
+  await expect(page.locator("#iosInst")).toBeVisible();
+  await page.click("#iosOk");
+  await expect(page.locator("#iosInst")).toBeHidden();
+  await page.reload();
+  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await expect(page.locator("#iosInst")).toBeHidden();
+});
+
 test("consumo por litro e qual combustível colocar", async ({ page }) => {
   const abastece = (d, km) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + d });
   await abrir(page, dados({ lancamentos: [abastece(-30, 40000), abastece(-20, 40480), abastece(-10, 40960)] }));

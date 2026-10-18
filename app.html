@@ -310,6 +310,7 @@ td:first-child { text-transform: capitalize; }
 
 <main class="wrap">
   <div id="offline" class="banner" hidden>Para salvar seus dados, abra esta página no Claude com a sua conta.</div>
+  <div id="iosInst" class="banner" hidden><b>Instale antes de começar a anotar.</b> No iPhone, o que você anota aqui no Safari não passa para o app instalado, e o Safari pode apagar os dados se ficar 7 dias sem abrir. Toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. <br><button type="button" class="btn ghost sm" id="iosOk" style="margin-top:8px">Entendi</button></div>
   <section id="tab-inicio" class="wrap"></section>
   <section id="tab-historico" class="wrap" hidden></section>
   <section id="tab-carro" class="wrap" hidden></section>
@@ -453,6 +454,26 @@ td:first-child { text-transform: capitalize; }
     S.manut.forEach((m) => { if (cid(m) === carId) vals.push(Number(m.ultKm) || 0); });
     S.hist.forEach((h) => { if (cid(h) === carId) vals.push(Number(h.km) || 0); });
     return Math.max(0, ...vals);
+  }
+  // KM muito acima do maior já anotado costuma ser um zero a mais. Como o app usa sempre o maior KM,
+  // um erro desses deixaria as manutenções "vencidas"; então pede para conferir e tocar em Salvar de novo.
+  const KM_SALTO = 3000;
+  function kmConfere(btn, err, kms, carId = carAtivoId()) {
+    const atual = kmAtual(carId);
+    const k = Math.max(0, ...kms.map((v) => Number(v) || 0));
+    if (!atual || k <= atual + KM_SALTO || btn.dataset.kmOk === String(k)) return true;
+    btn.dataset.kmOk = String(k);
+    err.textContent = "O KM " + num(k) + " está " + num(k - atual) + " km acima do último anotado (" + num(atual) + "). Confira o painel. Se estiver certo, toque em salvar de novo.";
+    return false;
+  }
+  // onde foi anotado um KM maior que k (para achar e corrigir um erro de digitação)
+  function kmMaiorOnde(k, carId = carAtivoId()) {
+    const r = [];
+    S.lanc.forEach((x) => { if (cid(x) === carId && Number(x.km) > k) r.push([Number(x.km), x.data, "o lançamento de " + (x.cat || "gasto").toLowerCase() + " (Histórico)"]); });
+    S.dias.forEach((d) => { if (cid(d) === carId && Math.max(Number(d.kmFim) || 0, Number(d.kmIni) || 0) > k) r.push([Math.max(Number(d.kmFim) || 0, Number(d.kmIni) || 0), d.data, "o dia de trabalho (Histórico)"]); });
+    S.manut.forEach((m) => { if (cid(m) === carId && Number(m.ultKm) > k) r.push([Number(m.ultKm), m.ultData, "o serviço " + m.servico + " (Carro, Manutenção)"]); });
+    S.hist.forEach((h) => { if (cid(h) === carId && Number(h.km) > k) r.push([Number(h.km), h.data, "o histórico de " + h.servico + " (Carro)"]); });
+    return r.sort((a, b) => b[0] - a[0])[0] || null;
   }
   function stats(ym, carId) {
     const L = S.lanc.filter((x) => (x.data || "").startsWith(ym) && (!carId || cid(x) === carId));
@@ -1581,6 +1602,7 @@ td:first-child { text-transform: capitalize; }
         const rec = { servico: servico.slice(0, 80), data, ts: (h && h.ts) || Date.now(), carId: carH };
         if (h && h.mid) rec.mid = h.mid;
         const km = intOrNull(b.querySelector("#hK").value); if (km) rec.km = km;
+        if (!kmConfere(ev.target, err, [km], carH)) return;
         const v = parseValor(b.querySelector("#hV").value); if (v > 0) rec.valor = Math.round(v * 100) / 100;
         const local = b.querySelector("#hL").value.trim(); if (local) rec.local = local.slice(0, 60);
         const lancar = !h && b.querySelector("#hLanc") && b.querySelector("#hLanc").checked && rec.valor > 0;
@@ -1843,6 +1865,7 @@ td:first-child { text-transform: capitalize; }
         const c = catOf(F.cat);
         const doc = { data: F.data, tipo: F.tipo, cat: F.cat, trabalho: !!(c && c.w), valor: Math.round(valor * 100) / 100, desc: String(F.desc || "").trim().slice(0, 120), ts: F.ts || Date.now(), carId: F.carId };
         const kmN = intOrNull(F.km); if (kmN && KM_CATS.includes(F.cat)) doc.km = kmN;
+        if (!kmConfere(ev.target, err, [doc.km], F.carId)) return;
         const lit = parseValor(F.litros); if (lit > 0 && F.cat === "Combustível") doc.litros = Math.round(lit * 100) / 100;
         if (F.cat === "Combustível") { if (F.comb) doc.comb = F.comb; doc.cheio = F.cheio !== false; if (String(F.posto || "").trim()) doc.posto = String(F.posto).trim().slice(0, 60); }
         const guardarHist = HIST_CATS.includes(F.cat) && !F.id && F.hist !== false;
@@ -1945,6 +1968,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       b.querySelector("#fCancel").onclick = closeSheet;
       b.querySelector("#fSave").onclick = async (ev) => {
         const kmIni = intOrNull(b.querySelector("#jKm").value);
+        if (!kmConfere(ev.target, b.querySelector("#fErr"), [kmIni])) return;
         ev.target.disabled = true;
         try { await saveSettings({ jornada: { inicio: Date.now(), kmIni: kmIni || null, carId: carAtivoId() } }); closeSheet(); toast("Boa corrida! O tempo está contando."); }
         catch (e) { ev.target.disabled = false; b.querySelector("#fErr").textContent = dbErrMsg(e); }
@@ -1980,6 +2004,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         const kmP = intOrNull(b.querySelector("#jKp").value);
         if (kmP && kmIni && kmFim && kmP > kmFim - kmIni) { err.textContent = "Os km com passageiro passaram dos km rodados no dia."; return; }
         if (kmP) dia.kmPass = kmP;
+        if (!kmConfere(ev.target, err, [kmIni, kmFim], dia.carId)) return;
         ev.target.disabled = true;
         try {
           await col("dias").add(dia);
@@ -2021,6 +2046,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         if (kmP) doc.kmPass = kmP;
         if (d && d.inicio) { doc.inicio = d.inicio; doc.fim = d.fim; }
         if (d) { if (d.carId) doc.carId = d.carId; } else doc.carId = carAtivoId();
+        if (!kmConfere(ev.target, err, [kmIni, kmFim], cid(doc))) return;
         ev.target.disabled = true;
         try { if (d) await col("dias").doc(d.id).set(doc); else await col("dias").add(doc); closeSheet(); toast("Dia salvo"); }
         catch (e) { ev.target.disabled = false; err.textContent = dbErrMsg(e); }
@@ -2063,6 +2089,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         else if (m && m.custo) doc.custo = m.custo;
         if (m && m.proxData && !feitoHoje) doc.proxData = m.proxData;
         if (!ck && !cm) { err.textContent = "Diga de quantos em quantos km ou meses repetir."; return; }
+        if (!kmConfere(ev.target, err, [uk], m ? cid(m) : carAtivoId())) return;
         ev.target.disabled = true;
         try {
           doc.carId = m ? m.carId : carAtivoId();
@@ -2092,6 +2119,10 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       b.querySelector("#fSave").onclick = async (ev) => {
         const k = intOrNull(b.querySelector("#kK").value);
         if (!k) { b.querySelector("#fErr").textContent = "Digite o KM, por exemplo 46200."; return; }
+        // o app usa o maior KM anotado: se há um maior que este, foi erro de digitação e precisa ser corrigido lá
+        const maior = kmMaiorOnde(k);
+        if (maior) { b.querySelector("#fErr").textContent = "Há um KM maior anotado: " + num(maior[0]) + (maior[1] ? " em " + dBR(maior[1]) : "") + ", em " + maior[2] + ". Se foi erro de digitação, corrija lá e o KM certo volta a valer."; return; }
+        if (!kmConfere(ev.target, b.querySelector("#fErr"), [k])) return;
         ev.target.disabled = true;
         const car = carAtivo();
         // o hodômetro não volta: leituras maiores que a nova eram erro de digitação
@@ -2288,6 +2319,16 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (!C || typeof C.use !== "function") { S.offline = true; render(); return; }
     S.local = C === window.localApp;
     if (S.local) $("#offline").textContent = "Este navegador não deixou o app guardar dados. Saia da aba anônima ou libere o armazenamento do site e abra de novo.";
+    // iPhone no Safari (fora do app instalado): os dados ficam separados dos do app da tela inicial
+    const ehIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const instalado = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+    const AVISO_IOS = "caixa-motorista:aviso-ios";
+    let viuAviso = false;
+    try { viuAviso = localStorage.getItem(AVISO_IOS) === "1"; } catch (e) { /* sem armazenamento */ }
+    if (S.local && ehIOS && !instalado && !viuAviso) {
+      $("#iosInst").hidden = false;
+      $("#iosOk").onclick = () => { $("#iosInst").hidden = true; try { localStorage.setItem(AVISO_IOS, "1"); } catch (e) { /* nada */ } };
+    }
     const [db, user] = await Promise.all([C.use("db"), C.use("user")]);
     const uid = user ? await user.id() : null;
     if (!db || !uid) { S.offline = true; render(); return; }
