@@ -1660,19 +1660,49 @@ td:first-child { text-transform: capitalize; }
     btn.disabled = false; btn.textContent = old;
   }
 
-  // Tanque (litros) de carros comuns entre motoristas de app: só uma sugestão, a pessoa confere no manual.
-  const TANQUES = [["grand siena", 48], ["hb20s", 50], ["hb20", 50], ["onix", 44], ["prisma", 54], ["cobalt", 54], ["spin", 53], ["cruze", 52],
-    ["creta", 50], ["argo", 48], ["cronos", 48], ["mobi", 47], ["uno", 48], ["palio", 48], ["siena", 48], ["kwid", 38], ["sandero", 50], ["logan", 50],
-    ["gol", 55], ["voyage", 55], ["fox", 50], ["polo", 52], ["virtus", 52], ["nivus", 52], ["fiesta", 52], ["ka", 51], ["corolla", 50], ["yaris", 45],
-    ["etios", 45], ["versa", 41], ["kicks", 41], ["march", 41], ["fit", 46]];
-  const tanqueSugerido = (nome) => { const n = " " + semAcento(nome).replace(/[^a-z0-9]+/g, " ") + " "; const t = TANQUES.find(([k]) => n.includes(" " + k + " ")); return t ? t[1] : null; };
+  // Tanque (litros) de carros vendidos no Brasil, pela ficha das montadoras: só uma sugestão, a pessoa confere no manual.
+  // [nome no modelo da FIPE, litros, ano inicial, ano final]. Os nomes mais específicos vêm antes ("onix plus" antes de "onix").
+  const TANQUES = [
+    // Chevrolet
+    ["onix plus", 44], ["onix joy", 54], ["onix", 54, 0, 2019], ["onix", 44, 2020], ["prisma", 54], ["cobalt", 54], ["spin", 53],
+    ["tracker", 53, 0, 2020], ["tracker", 44, 2021], ["cruze", 52], ["celta", 54], ["corsa", 54], ["classic", 54], ["agile", 54],
+    ["sonic", 46], ["astra", 52], ["s10", 76],
+    // Hyundai
+    ["hb20s", 50], ["hb20x", 50], ["hb20", 50], ["creta", 50],
+    // Fiat
+    ["grand siena", 48], ["argo", 48], ["cronos", 48], ["mobi", 47], ["uno", 48], ["palio", 48], ["siena", 48], ["strada", 58, 0, 2020], ["strada", 55, 2021],
+    ["toro", 55], ["pulse", 47], ["fastback", 47], ["idea", 48], ["punto", 60], ["doblo", 60],
+    // Volkswagen
+    ["crossfox", 50], ["t cross", 52], ["gol", 55], ["voyage", 55], ["fox", 50], ["polo", 45, 0, 2017], ["polo", 52, 2018],
+    ["virtus", 52], ["nivus", 52], ["saveiro", 55], ["amarok", 80], ["kombi", 45],
+    // Renault
+    ["kwid", 38], ["sandero", 50], ["logan", 50], ["stepway", 50], ["duster", 50], ["captur", 50], ["oroch", 50], ["clio", 50], ["symbol", 50],
+    // Ford
+    ["ka", 51], ["fiesta", 52, 2014], ["ecosport", 52], ["focus", 55], ["ranger", 80],
+    // Toyota
+    ["corolla cross", 47], ["corolla", 50], ["yaris", 45], ["etios", 45], ["hilux", 80], ["sw4", 80],
+    // Honda
+    ["hr v", 50], ["city", 47], ["fit", 46],
+    // Nissan
+    ["versa", 41], ["kicks", 41], ["march", 41], ["sentra", 52], ["frontier", 80],
+    // Peugeot, Citroën e Jeep
+    ["208", 50, 0, 2020], ["208", 47, 2021], ["c3", 47], ["compass", 60],
+    // por último: "up" aparece dentro de outros nomes ("pick up")
+    ["up", 50],
+  ];
+  const tanqueSugerido = (nome, ano) => {
+    const n = " " + semAcento(nome).replace(/[^a-z0-9]+/g, " ") + " ";
+    if (/ pick up | cabine /.test(n) && !/ (strada|saveiro|toro|oroch|s10|hilux|ranger|amarok|frontier) /.test(n)) return null;
+    const t = TANQUES.find(([k, , de, ate]) => n.includes(" " + k + " ") && (!de || !ano || ano >= de) && (!ate || !ano || ano <= ate));
+    return t ? t[1] : null;
+  };
   // Da escolha na Tabela FIPE tira ano e combustível. A FIPE chama carro flex de "Gasolina", então de 2007 em diante vira Flex.
   function fichaDaFipe(modeloNome, anoValor, anoNome) {
     const tipo = String(anoValor || "").split("-")[1];
     let ano = parseInt(anoNome, 10);
     if (!(ano >= 1950 && ano <= 2035)) ano = new Date().getFullYear(); // 32000 = zero km
     const combustivel = tipo === "3" ? "Diesel" : tipo === "2" ? "Etanol" : /flex/i.test(modeloNome) || ano >= 2007 ? "Flex" : "Gasolina";
-    return { modelo: String(modeloNome || "").trim().slice(0, 60), ano, combustivel, tanque: tanqueSugerido(modeloNome) };
+    return { modelo: String(modeloNome || "").trim().slice(0, 60), ano, combustivel, tanque: tanqueSugerido(modeloNome, ano) };
   }
 
   function fichaForm(novo = false) {
