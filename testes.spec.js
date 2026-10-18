@@ -534,8 +534,10 @@ test("novo carro: escolhendo marca, modelo e ano na FIPE, o resto se preenche so
   await aba(page, "carro");
   await page.click("#addCar");
   await page.selectOption("#cfMarca", "23");
-  await page.fill("#cfFiltro", "onix");
-  await page.selectOption("#cfModelo", "9001");
+  await page.fill("#cfModelo", "onix");
+  await expect(page.locator(".sug")).toHaveCount(1); // a lista filtra enquanto digita
+  await page.click('[data-mod="9001"]');
+  await expect(page.locator("#cfModelo")).toHaveValue("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
   await page.fill("#cP", "abc1d23");
   await page.selectOption("#cfAno", "2020-1");
   await expect(page.locator("#cfOk")).toContainText("60.000,00");
@@ -571,8 +573,10 @@ test("novo carro: se a BrasilAPI falha, busca na reserva; e dá para digitar à 
   await page.click("#addCar");
   await expect(page.locator("#cM")).toBeHidden(); // só a busca, sem campos repetidos
   await page.selectOption("#cfMarca", "23");
-  await page.fill("#cfFiltro", "onix");
-  await page.selectOption("#cfModelo", "9001");
+  await page.fill("#cfModelo", "onix");
+  await expect(page.locator(".sug")).toHaveCount(1); // a lista filtra enquanto digita
+  await page.click('[data-mod="9001"]');
+  await expect(page.locator("#cfModelo")).toHaveValue("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
   await page.selectOption("#cfAno", "2020-1");
   await expect(page.locator("#cfOk")).toContainText("58.000,00");
   expect(pedidos.length).toBeGreaterThan(0);

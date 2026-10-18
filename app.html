@@ -274,6 +274,10 @@ td:first-child { text-transform: capitalize; }
 .fld input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
 .fld select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
 .fld select:disabled { opacity: .6; }
+.sugestoes { display: grid; max-height: 264px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.sugestoes[hidden] { display: none; }
+.sugestoes .sug { text-align: left; padding: 11px 12px; font-size: 15px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; }
+.sugestoes .sug:last-of-type { border-bottom: 0; }
 .fld input.busca { padding-left: 38px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='m13 13 4 4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 12px center; }
 .txt-g { color: var(--ganho); }
 .txt-x { color: var(--gasto); }
@@ -1743,8 +1747,13 @@ td:first-child { text-transform: capitalize; }
     const nomeDe = (lista, v, k) => ((lista || []).find((x) => String(x.valor) === String(v)) || {})[k] || "";
     const filtrados = () => (P.modelos || []).filter((m) => !P.filtro || semAcento(m.modelo).includes(semAcento(P.filtro)));
     const espera = (oque) => (P.busy === oque ? "Carregando…" : "Não carregou");
-    const opModelos = (mods) => `<option value="">${P.modelos ? (mods.length ? "Escolha o modelo (" + mods.length + ")" : "Nenhum modelo com esse nome") : espera("modelos")}</option>` +
-      mods.map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.modelo) ? " selected" : ""}>${esc(m.modelo)}</option>`).join("");
+    // modelo: um campo só, digita e escolhe na lista que aparece embaixo (no máximo 40 de cada vez)
+    const sugestoesHTML = () => {
+      const mods = filtrados();
+      if (!mods.length) return `<p class="hint" style="margin:0;padding:8px 4px">Nenhum modelo com esse nome.</p>`;
+      return mods.slice(0, 40).map((m) => `<button type="button" class="sug" data-mod="${esc(m.valor)}">${esc(m.modelo)}</button>`).join("") +
+        (mods.length > 40 ? `<p class="hint" style="margin:0;padding:8px 4px">Mais ${mods.length - 40}. Digite mais para achar.</p>` : "");
+    };
     let redesenhar = () => {}, meu = -1;
     const read = (b) => { F.modelo = b.querySelector("#cM").value; F.ano = b.querySelector("#cA").value; F.placa = b.querySelector("#cP").value; F.tanqueTxt = b.querySelector("#cT").value; };
     let lerTela = () => {};
@@ -1783,8 +1792,8 @@ td:first-child { text-transform: capitalize; }
         ${busca ? `<div class="btn-row"><button type="button" class="btn sm ghost" id="cfLista">Buscar o carro na lista</button></div>` : ""}`;
       return `<div class="fld"><span>Carro</span>
           <select id="cfMarca"${P.marcas ? "" : " disabled"}><option value="">${P.marcas ? "Escolha a marca" : espera("marcas")}</option>${(P.marcas || []).map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.marca) ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select>
-          ${P.marca && P.modelos && P.modelos.length > 12 ? `<input id="cfFiltro" class="busca" type="search" aria-label="Filtrar modelos" placeholder="Digite para filtrar, ex.: onix 1.0" value="${esc(P.filtro)}" autocomplete="off">` : ""}
-          ${P.marca ? `<select id="cfModelo"${P.modelos ? "" : " disabled"}>${opModelos(filtrados())}</select>` : ""}
+          ${P.marca ? `<input id="cfModelo" class="busca" type="search" aria-label="Modelo" placeholder="${P.modelos ? "Digite o modelo, ex.: onix 1.0" : espera("modelos")}" value="${esc(P.filtro)}" autocomplete="off"${P.modelos ? "" : " disabled"}>
+            <div class="sugestoes" id="cfLista"${P.modelos && !P.modelo ? "" : " hidden"}>${sugestoesHTML()}</div>` : ""}
           ${P.modelo ? `<select id="cfAno"${P.anos ? "" : " disabled"}><option value="">${P.anos ? "Escolha o ano" : espera("anos")}</option>${(P.anos || []).map((a) => `<option value="${esc(a.valor)}"${String(a.valor) === String(P.ano) ? " selected" : ""}>${esc(a.nome)}</option>`).join("")}</select>` : ""}
         </div>
         ${P.busy === "valor" ? `<p class="note" style="margin:0">Buscando os dados…</p>` : ""}
@@ -1805,11 +1814,21 @@ td:first-child { text-transform: capitalize; }
       lerTela = () => { if (b.querySelector("#cM")) read(b); };
       b.querySelector("#fCancel").onclick = closeSheet;
       b.querySelectorAll("[data-cc]").forEach((el) => el.onclick = () => { read(b); F.combustivel = el.dataset.cc; draw(); });
-      const sm = b.querySelector("#cfMarca"), so = b.querySelector("#cfModelo"), sa = b.querySelector("#cfAno"), fl = b.querySelector("#cfFiltro");
+      const sm = b.querySelector("#cfMarca"), so = b.querySelector("#cfModelo"), sa = b.querySelector("#cfAno"), lista = b.querySelector("#cfLista");
       if (sm) sm.onchange = () => { P.marca = sm.value; P.modelo = ""; P.ano = ""; P.modelos = null; P.anos = null; P.res = null; P.sel = null; P.filtro = ""; if (P.marca) carregar("modelos"); else { read(b); draw(); } };
-      if (so) so.onchange = () => { P.modelo = so.value; P.ano = ""; P.anos = null; P.res = null; P.sel = null; if (P.modelo) carregar("anos"); else { read(b); draw(); } };
+      const ligarSugestoes = () => lista && lista.querySelectorAll("[data-mod]").forEach((el) => el.onclick = () => {
+        const m = (P.modelos || []).find((x) => String(x.valor) === el.dataset.mod);
+        P.modelo = el.dataset.mod; P.filtro = m ? m.modelo : P.filtro; P.ano = ""; P.anos = null; P.res = null; P.sel = null;
+        carregar("anos");
+      });
+      ligarSugestoes();
+      // digitar troca só a lista (sem redesenhar a folha, para o teclado não fechar)
+      if (so && lista) so.oninput = () => {
+        P.filtro = so.value;
+        if (P.modelo) { P.modelo = ""; P.ano = ""; P.anos = null; const a = b.querySelector("#cfAno"); if (a) a.remove(); }
+        lista.hidden = false; lista.innerHTML = sugestoesHTML(); ligarSugestoes();
+      };
       if (sa) sa.onchange = () => { P.ano = sa.value; P.res = null; P.sel = null; if (P.ano) carregar("valor"); else { read(b); draw(); } };
-      if (fl && so) fl.oninput = () => { P.filtro = fl.value; so.innerHTML = opModelos(filtrados()); };
       const rt = b.querySelector("#cfRetry");
       if (rt) rt.onclick = () => { read(b); carregar(P.ultimo); };
       const tr = b.querySelector("#cfTrocar");
