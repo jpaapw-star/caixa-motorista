@@ -348,6 +348,39 @@ test("cópia de segurança: salva e restaura em outro celular", async ({ page },
   await expect(page.locator("#fSave")).toBeDisabled();
 });
 
+test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta pela primeira tela", async ({ page }) => {
+  // menu de compartilhar como o do Chrome no Android: aceita texto, recusa .json
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "canShare", { configurable: true, value: (d) => !!(d && d.files && /\.txt$/.test(d.files[0].name)) });
+    Object.defineProperty(Navigator.prototype, "share", { configurable: true, value: async (d) => { window.__compartilhado = { nome: d.files[0].name, texto: await d.files[0].text() }; } });
+  });
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 300, sep: 30, ts: 1 }] }, { ultimoBackup: Date.now() - 8 * 864e5 }));
+  // lembra depois de uma semana sem cópia
+  await expect(page.locator(".alerts")).toContainText("Cópia de segurança");
+  await expect(page.locator(".alerts")).toContainText("8 dias");
+  await expect(page.locator("#restIni")).toHaveCount(0);
+  await aba(page, "resumo");
+  await page.click("#bkSave");
+  await expect(page.locator("#toast")).toContainText("Cópia enviada");
+  const enviado = await page.evaluate(() => window.__compartilhado);
+  expect(enviado.nome).toMatch(/^caixa-motorista-copia-.*\.txt$/);
+  expect(JSON.parse(enviado.texto).colecoes.lancamentos).toHaveLength(1);
+  await aba(page, "inicio");
+  await expect(page.locator(".alerts")).toHaveCount(0);
+  // formatou: o app abre vazio e oferece restaurar logo na primeira tela
+  await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
+  await page.reload();
+  await expect(page.locator("#restIni")).toBeVisible();
+  await page.click("#bkLoadIni");
+  await page.setInputFiles("#bkIn", { name: enviado.nome, mimeType: "text/plain", buffer: Buffer.from(enviado.texto) });
+  await expect(page.locator("#bkMsg")).toContainText("1 registro");
+  await page.click("#fSave");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  await expect(page.locator(".lucro")).toContainText("300,00");
+  await expect(page.locator("#restIni")).toHaveCount(0);
+});
+
 test.describe("no Chrome", () => {
   test.use({ serviceWorkers: "allow" });
 

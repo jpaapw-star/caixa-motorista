@@ -67,13 +67,16 @@
   const ehIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const tipoDe = (nome) => (/\.json$/i.test(nome) ? "application/json" : /\.csv$/i.test(nome) ? "text/csv;charset=utf-8" : /\.pdf$/i.test(nome) ? "application/pdf" : "application/octet-stream");
   const downloads = {
-    async save({ filename, data }) {
+    // compartilhar: abre o menu de compartilhar também no Android (cópia de segurança: Drive, WhatsApp, e-mail)
+    async save({ filename, data, compartilhar, titulo }) {
       const blob = data instanceof Blob ? data : new Blob([data], { type: tipoDe(filename) });
       // no iPhone, o menu de compartilhar é o jeito certo de guardar em Arquivos, Drive ou WhatsApp
-      if (ehIOS && navigator.canShare) {
-        const file = new File([blob], filename, { type: blob.type || tipoDe(filename) });
+      if ((ehIOS || compartilhar) && navigator.canShare) {
+        let file = new File([blob], filename, { type: blob.type || tipoDe(filename) });
+        // o Chrome do Android não compartilha .json; como texto ele vai (e Restaurar cópia aceita os dois)
+        if (compartilhar && !navigator.canShare({ files: [file] }) && /\.json$/i.test(filename)) file = new File([blob], filename.replace(/\.json$/i, ".txt"), { type: "text/plain" });
         if (navigator.canShare({ files: [file] })) {
-          try { await navigator.share({ files: [file] }); return { status: "saved" }; }
+          try { await navigator.share(titulo ? { files: [file], title: titulo } : { files: [file] }); return { status: "saved", compartilhado: true }; }
           catch (e) { if (e && e.name === "AbortError") { const err = new Error("cancelado"); err.code = "cancelled"; throw err; } }
         }
       }

@@ -797,6 +797,9 @@ td:first-child { text-transform: capitalize; }
         <div class="lucro num">${loading ? "…" : brl(s.saldo)}</div>
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
+      ${S.local && S.loaded.l && S.loaded.d && !(S.lanc.length + S.dias.length + S.hist.length) ? `<div class="card" id="restIni"><div class="sec-h"><h2>Trocou de celular ou formatou?</h2></div>
+        <p class="note" style="margin:0">Se você salvou uma cópia no Drive, no WhatsApp ou no e-mail, traga tudo de volta agora.</p>
+        <div class="btn-row"><button class="btn sm primary" id="bkLoadIni"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>` : ""}
       ${jornadaHTML()}
       <div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>
       <div class="sec-h"><h2>Trabalho no mês</h2><small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)} · ${num(s.corridas)} corridas</small></div>
@@ -1746,7 +1749,7 @@ td:first-child { text-transform: capitalize; }
       <div class="card"><div class="sec-h"><h2>Ganhos por app em ${mes}</h2></div>${porCat("ganho")}</div>
       <div class="card"><div class="sec-h"><h2>Para onde foi o dinheiro</h2></div>${porCat("gasto")}</div>
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
-        <p class="note" style="margin:0">${S.local ? "Os dados ficam só neste celular. Salve uma cópia de vez em quando e guarde no Drive, no e-mail ou no WhatsApp: se trocar de celular ou limpar o navegador, é ela que traz tudo de volta." : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + "." : ""}</p>
+        <p class="note" style="margin:0">${S.local ? "Os dados ficam só neste celular. Toque em Salvar cópia e mande para o seu Google Drive, WhatsApp ou e-mail (o app lembra toda semana). Se trocar de celular, formatar ou limpar o navegador, é a cópia que traz tudo de volta: no celular novo, toque em Restaurar cópia e escolha o arquivo." : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + "." : ""}</p>
         <div class="exports">${S.downloads ? `<button class="btn sm primary" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
       ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
         <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
@@ -2139,7 +2142,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (!S.local || !(S.lanc.length + S.dias.length + S.hist.length)) return null;
     const ult = Number(S.settings.ultimoBackup) || 0;
     const dias = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
-    if (dias != null && dias < 30) return null;
+    if (dias != null && dias < 7) return null;
     return { nome: "Cópia de segurança", txt: dias == null ? "você ainda não salvou nenhuma" : "a última foi há " + dias + " dias", st: "breve", lbl: "Salvar", tab: "resumo" };
   }
   async function salvarBackup(btn) {
@@ -2149,9 +2152,9 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const dados = { app: "caixa-do-motorista", versao: 1, criado: new Date().toISOString(), config: S.settings, colecoes };
     btn.disabled = true;
     try {
-      await S.downloads.save({ filename: "caixa-motorista-copia-" + today() + ".json", data: JSON.stringify(dados) });
+      const r = await S.downloads.save({ filename: "caixa-motorista-copia-" + today() + ".json", data: JSON.stringify(dados), compartilhar: true, titulo: "Cópia do Caixa do Motorista" });
       await saveSettings({ ultimoBackup: Date.now() }).catch(() => {});
-      toast("Cópia salva. Guarde o arquivo fora do celular também.");
+      toast(r && r.compartilhado ? "Cópia enviada. Guarde onde você acha fácil no celular novo." : "Cópia salva em Downloads. Mande também para o Drive ou o e-mail: se o celular for formatado, ela some junto.");
     } catch (e) {
       if (e && e.code === "unavailable") { S.downloads = null; render(); }
       else if (!(e && (e.code === "cancelled" || e.code === "declined"))) toast("Não foi possível salvar a cópia agora.");
@@ -2161,9 +2164,9 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
   function restaurarForm() {
     let dados = null;
     openForm(() => `
-      <div><h2>Restaurar cópia</h2><p class="note">Escolha o arquivo da cópia de segurança (.json). Os dados que estão aqui agora são trocados pelos da cópia.</p></div>
+      <div><h2>Restaurar cópia</h2><p class="note">Escolha o arquivo da cópia de segurança (caixa-motorista-copia, que você guardou no Drive, no WhatsApp ou no e-mail). Os dados que estão aqui agora são trocados pelos da cópia.</p></div>
       <label class="btn-print" for="bkIn">Escolher arquivo</label>
-      <input type="file" id="bkIn" accept=".json,application/json" hidden>
+      <input type="file" id="bkIn" accept=".json,.txt,application/json,text/plain" hidden>
       <p class="hint" id="bkMsg"></p>
       <p class="err" id="fErr"></p>
       <div class="sh-actions"><button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave" disabled>Restaurar</button></div>
@@ -2275,7 +2278,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "cidadeBtn") { cidadeForm(); return; }
     if (t.id === "shareApp") { compartilharApp(); return; }
     if (t.id === "bkSave") { salvarBackup(t); return; }
-    if (t.id === "bkLoad") { restaurarForm(); return; }
+    if (t.id === "bkLoad" || t.id === "bkLoadIni") { restaurarForm(); return; }
     if (t.id === "expDias") { exportar("dias"); return; }
     if (t.dataset.lanc) { const x = S.lanc.find((x) => x.id === t.dataset.lanc); if (x) lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); return; }
     if (t.dataset.dia) { const d = S.dias.find((x) => x.id === t.dataset.dia); if (d) diaForm(d); return; }
