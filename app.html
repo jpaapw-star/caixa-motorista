@@ -274,6 +274,7 @@ td:first-child { text-transform: capitalize; }
 .fld input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
 .fld select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
 .fld select:disabled { opacity: .6; }
+.fld input.busca { padding-left: 38px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='m13 13 4 4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 12px center; }
 .txt-g { color: var(--ganho); }
 .txt-x { color: var(--gasto); }
 .qr { display: grid; grid-template-columns: 136px minmax(0, 1fr); gap: 14px; align-items: center; }
@@ -1294,17 +1295,41 @@ td:first-child { text-transform: capitalize; }
   // ----- Tabela FIPE (o app consulta a BrasilAPI direto do celular; cada carro é de uma pessoa) -----
   const FIPE_API = "https://brasilapi.com.br/api/fipe";
   const fipeCache = {};
+  // A BrasilAPI às vezes falha em alguns modelos: tenta de novo uma vez e, se ainda falhar, pergunta à API FIPE da Parallelum
+  // (mesmos códigos da FIPE, sem histórico de meses antigos), traduzindo a resposta para o formato da BrasilAPI.
+  const FIPE_RESERVA = "https://parallelum.com.br/fipe/api/v1/carros/marcas";
+  async function fipeBuscar(url) {
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    const t = ctl ? setTimeout(() => ctl.abort(), 15000) : 0;
+    try {
+      const r = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
+      if (!r.ok) { const e = new Error("FIPE respondeu " + r.status); e.status = r.status; throw e; }
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+  async function fipeReserva(path) {
+    const [rota, qs] = path.split("?");
+    const p = rota.split("/").filter(Boolean); // ex.: ["anos", "v1", "carros", "23", "9001"]
+    if (rota === "/marcas/v1/carros") return (await fipeBuscar(FIPE_RESERVA)).map((m) => ({ nome: m.nome, valor: String(m.codigo) }));
+    if (p[0] === "veiculos") return ((await fipeBuscar(FIPE_RESERVA + "/" + p[3] + "/modelos")).modelos || []).map((m) => ({ modelo: m.nome, valor: String(m.codigo) }));
+    if (p[0] === "anos") return (await fipeBuscar(FIPE_RESERVA + "/" + p[3] + "/modelos/" + p[4] + "/anos")).map((a) => ({ nome: a.nome, valor: String(a.codigo) }));
+    if (p[0] === "detalhes") {
+      const d = await fipeBuscar(FIPE_RESERVA + "/" + p[3] + "/modelos/" + p[4] + "/anos/" + p[5]);
+      return { valor: d.Valor, mesReferencia: d.MesReferencia, codigoFipe: d.CodigoFipe, combustivel: d.Combustivel, anoModelo: d.AnoModelo, reserva: !!qs };
+    }
+    throw new Error("sem reserva para " + rota);
+  }
   async function fipeGet(path) {
     if (fipeCache[path]) return fipeCache[path];
-    const ctl = typeof AbortController === "function" ? new AbortController() : null;
-    const t = ctl ? setTimeout(() => ctl.abort(), 20000) : 0;
-    try {
-      const r = await fetch(FIPE_API + path, ctl ? { signal: ctl.signal } : undefined);
-      if (!r.ok) { const e = new Error("FIPE respondeu " + r.status); e.status = r.status; throw e; }
-      const j = await r.json();
-      fipeCache[path] = j;
-      return j;
-    } finally { clearTimeout(t); }
+    let j;
+    try { j = await fipeBuscar(FIPE_API + path); }
+    catch (e1) {
+      await new Promise((ok) => setTimeout(ok, 800));
+      try { j = await fipeBuscar(FIPE_API + path); }
+      catch (e2) { j = await fipeReserva(path); }
+    }
+    fipeCache[path] = j;
+    return j;
   }
   const MES_SA = MES.map(semAcento);
   // "outubro/2026 " ou "outubro de 2026" -> número do mês (ano × 12 + mês), para achar o mesmo mês do ano anterior
@@ -1317,16 +1342,16 @@ td:first-child { text-transform: capitalize; }
   const fipeNum = (t) => parseValor(String(t || "").replace(/[^\d,.]/g, ""));
   // Valor de hoje e de 12 meses atrás do mesmo carro (mesmo modelo e ano): a diferença é quanto ele perde por ano.
   async function fipeConsulta(f) {
-    const tabelas = await fipeGet("/tabelas/v1");
-    const atual = Array.isArray(tabelas) ? tabelas[0] : null;
-    if (!atual) throw new Error("FIPE sem tabela de referência");
+    // sem a lista de meses (BrasilAPI fora do ar) ainda dá para pegar o valor de hoje, só sem a desvalorização
+    const tabelas = await fipeGet("/tabelas/v1").catch(() => null);
+    const atual = Array.isArray(tabelas) && tabelas.length ? tabelas[0] : null;
     const base = "/detalhes/v1/carros/" + encodeURIComponent(f.marca) + "/" + encodeURIComponent(f.modelo) + "/" + encodeURIComponent(f.ano);
-    const det = await fipeGet(base + "?tabela_referencia=" + atual.codigo);
+    const det = await fipeGet(atual ? base + "?tabela_referencia=" + atual.codigo : base);
     const valor = fipeNum(det.valor);
     if (!(valor > 0)) throw new Error("FIPE sem valor");
-    const mAtual = fipeMes(det.mesReferencia) ?? fipeMes(atual.mes);
+    const mAtual = fipeMes(det.mesReferencia) ?? (atual ? fipeMes(atual.mes) : null);
     let desval = null, valorAntes = null;
-    const antes = mAtual != null ? tabelas.find((t) => fipeMes(t.mes) === mAtual - 12) : null;
+    const antes = atual && mAtual != null ? tabelas.find((t) => fipeMes(t.mes) === mAtual - 12) : null;
     if (antes) {
       try {
         const d2 = await fipeGet(base + "?tabela_referencia=" + antes.codigo);
@@ -1335,7 +1360,7 @@ td:first-child { text-transform: capitalize; }
         if (v2 > 0 && fipeMes(d2.mesReferencia) === mAtual - 12) { valorAntes = v2; desval = Math.max(0, Math.min(40, (1 - valor / v2) * 100)); }
       } catch (e) { /* carro novo demais para ter valor de 12 meses atrás */ }
     }
-    return { valor, mes: String(det.mesReferencia || atual.mes).trim(), codigoFipe: det.codigoFipe || "", desval, valorAntes };
+    return { valor, mes: String(det.mesReferencia || (atual && atual.mes) || "").trim(), codigoFipe: det.codigoFipe || "", desval, valorAntes };
   }
   async function fipeAplicar(car, sel, r) {
     const fipe = limpa({ ...sel, valor: r.valor, mes: r.mes, codigoFipe: r.codigoFipe, desval: r.desval, valorAntes: r.valorAntes, atualizado: today() });
@@ -1710,17 +1735,21 @@ td:first-child { text-transform: capitalize; }
     const F = novo ? { combustivel: "Flex" } : { combustivel: "Flex", ...atual };
     if (F.tanque) F.tanqueTxt = num(F.tanque, F.tanque % 1 ? 1 : 0);
     // busca na Tabela FIPE: escolhendo marca, modelo e ano, o resto se preenche sozinho
-    const P = { marcas: null, modelos: null, anos: null, marca: "", modelo: "", ano: "", filtro: "", busy: "", erro: "", res: null, sel: null, tanqueSug: false };
+    const P = { marcas: null, modelos: null, anos: null, marca: "", modelo: "", ano: "", filtro: "", busy: "", erro: "", res: null, sel: null, tanqueSug: false, jaTinha: false };
     const busca = S.local && !S.offline;
+    // carro que já veio da FIPE: mostra o resumo; carro digitado à mão: mostra os campos
+    if (!novo && atual.fipe && atual.fipe.valor) { P.res = { valor: atual.fipe.valor, mes: atual.fipe.mes || "" }; P.sel = atual.fipe; P.jaTinha = true; }
+    P.manual = !busca || (!novo && !!atual.modelo && !P.jaTinha);
     const nomeDe = (lista, v, k) => ((lista || []).find((x) => String(x.valor) === String(v)) || {})[k] || "";
     const filtrados = () => (P.modelos || []).filter((m) => !P.filtro || semAcento(m.modelo).includes(semAcento(P.filtro)));
-    const opModelos = (mods) => `<option value="">${P.modelos ? (mods.length ? "Escolha o modelo (" + mods.length + ")" : "Nenhum modelo com esse nome") : "Carregando…"}</option>` +
+    const espera = (oque) => (P.busy === oque ? "Carregando…" : "Não carregou");
+    const opModelos = (mods) => `<option value="">${P.modelos ? (mods.length ? "Escolha o modelo (" + mods.length + ")" : "Nenhum modelo com esse nome") : espera("modelos")}</option>` +
       mods.map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.modelo) ? " selected" : ""}>${esc(m.modelo)}</option>`).join("");
     let redesenhar = () => {}, meu = -1;
     const read = (b) => { F.modelo = b.querySelector("#cM").value; F.ano = b.querySelector("#cA").value; F.placa = b.querySelector("#cP").value; F.tanqueTxt = b.querySelector("#cT").value; };
     let lerTela = () => {};
     const carregar = async (oque) => {
-      lerTela(); P.busy = oque; P.erro = ""; if (formSeq === meu) redesenhar();
+      lerTela(); P.busy = oque; P.erro = ""; P.ultimo = oque; if (formSeq === meu) redesenhar();
       try {
         if (oque === "marcas") P.marcas = await fipeGet("/marcas/v1/carros");
         if (oque === "modelos") P.modelos = await fipeGet("/veiculos/v1/carros/" + encodeURIComponent(P.marca));
@@ -1729,7 +1758,7 @@ td:first-child { text-transform: capitalize; }
           P.res = await fipeConsulta({ marca: P.marca, modelo: P.modelo, ano: P.ano });
           P.sel = { marca: P.marca, marcaNome: nomeDe(P.marcas, P.marca, "nome"), modelo: P.modelo, modeloNome: nomeDe(P.modelos, P.modelo, "modelo"), ano: P.ano, anoNome: nomeDe(P.anos, P.ano, "nome") };
         }
-      } catch (e) { P.erro = "Não consegui falar com a Tabela FIPE agora. Dá para digitar os dados abaixo."; }
+      } catch (e) { P.erro = "A Tabela FIPE não respondeu agora."; }
       P.busy = "";
       if (formSeq !== meu || $("#sheet").hidden) return;
       lerTela(); // guarda o que a pessoa digitou enquanto esperava (placa, tanque)
@@ -1742,31 +1771,32 @@ td:first-child { text-transform: capitalize; }
       redesenhar();
     };
     const achou = () => !!(P.res && P.sel);
-    const buscaHTML = () => !busca ? "" : achou()
-      ? `<div class="cmp-out" id="cfOk"><span class="label">Seu carro · Tabela FIPE de ${esc(P.res.mes)}</span><b>${esc(F.modelo || "")}</b><span class="num">${esc(F.ano || "")} · ${brl(P.res.valor)}</span>
-          <div class="btn-row"><button type="button" class="btn sm ghost" id="cfTrocar">Trocar o carro</button></div></div>`
-      : `<div class="fld"><span>Buscar o carro (preenche sozinho)</span>
-        <select id="cfMarca"${P.marcas ? "" : " disabled"}><option value="">${P.marcas ? "Escolha a marca" : "Carregando…"}</option>${(P.marcas || []).map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.marca) ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select>
-        ${P.marca && P.modelos && P.modelos.length > 12 ? `<input id="cfFiltro" placeholder="Filtrar, ex.: onix 1.0" value="${esc(P.filtro)}" autocomplete="off">` : ""}
-        ${P.marca ? `<select id="cfModelo"${P.modelos ? "" : " disabled"}>${opModelos(filtrados())}</select>` : ""}
-        ${P.modelo ? `<select id="cfAno"${P.anos ? "" : " disabled"}><option value="">${P.anos ? "Escolha o ano" : "Carregando…"}</option>${(P.anos || []).map((a) => `<option value="${esc(a.valor)}"${String(a.valor) === String(P.ano) ? " selected" : ""}>${esc(a.nome)}</option>`).join("")}</select>` : ""}
-      </div>
-      ${P.busy === "valor" ? `<p class="note" style="margin:0">Buscando os dados…</p>` : ""}
-      ${P.erro ? `<p class="note" style="margin:0">${esc(P.erro)}</p>` : ""}
-      ${P.marcas ? `<p class="hint" style="margin:0">Não achou? Digite abaixo.</p>` : ""}`;
-    // achou na FIPE: modelo e ano já aparecem no resumo de cima, então não se repetem nos campos
-    const camposHTML = () => achou()
-      ? `<input type="hidden" id="cM" value="${esc(F.modelo || "")}"><input type="hidden" id="cA" value="${esc(F.ano || "")}">
-        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label>`
-      : `<label class="fld"><span>Modelo</span><input id="cM" placeholder="Ex.: Onix 1.0 LT" value="${esc(F.modelo || "")}"></label>
-      <div class="row2"><label class="fld"><span>Ano</span><input id="cA" type="number" inputmode="numeric" placeholder="2020" value="${esc(F.ano || "")}"></label>
-        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label></div>`;
+    const placaHTML = () => `<label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="Ex.: ABC1D23" value="${esc(F.placa || "")}"></label>`;
+    const escondidos = () => `<input type="hidden" id="cM" value="${esc(F.modelo || "")}"><input type="hidden" id="cA" value="${esc(F.ano || "")}">`;
+    // três jeitos, um de cada vez, para nada aparecer repetido: resumo do carro achado, busca na lista ou digitar à mão
+    const carroHTML = () => {
+      if (achou()) return `<div class="cmp-out" id="cfOk"><span class="label">Seu carro${P.res.mes ? " · Tabela FIPE de " + esc(P.res.mes) : ""}</span><b>${esc(F.modelo || "")}</b><span class="num">${esc(F.ano || "")} · ${brl(P.res.valor)}</span>
+          ${busca ? `<div class="btn-row"><button type="button" class="btn sm ghost" id="cfTrocar">Trocar o carro</button></div>` : ""}</div>${escondidos()}${placaHTML()}`;
+      if (P.manual) return `<label class="fld"><span>Modelo</span><input id="cM" placeholder="Ex.: Onix 1.0 LT" value="${esc(F.modelo || "")}"></label>
+        <div class="row2"><label class="fld"><span>Ano</span><input id="cA" type="number" inputmode="numeric" placeholder="Ex.: 2020" value="${esc(F.ano || "")}"></label>
+          <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="Ex.: ABC1D23" value="${esc(F.placa || "")}"></label></div>
+        ${busca ? `<div class="btn-row"><button type="button" class="btn sm ghost" id="cfLista">Buscar o carro na lista</button></div>` : ""}`;
+      return `<div class="fld"><span>Carro</span>
+          <select id="cfMarca"${P.marcas ? "" : " disabled"}><option value="">${P.marcas ? "Escolha a marca" : espera("marcas")}</option>${(P.marcas || []).map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.marca) ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select>
+          ${P.marca && P.modelos && P.modelos.length > 12 ? `<input id="cfFiltro" class="busca" type="search" aria-label="Filtrar modelos" placeholder="Digite para filtrar, ex.: onix 1.0" value="${esc(P.filtro)}" autocomplete="off">` : ""}
+          ${P.marca ? `<select id="cfModelo"${P.modelos ? "" : " disabled"}>${opModelos(filtrados())}</select>` : ""}
+          ${P.modelo ? `<select id="cfAno"${P.anos ? "" : " disabled"}><option value="">${P.anos ? "Escolha o ano" : espera("anos")}</option>${(P.anos || []).map((a) => `<option value="${esc(a.valor)}"${String(a.valor) === String(P.ano) ? " selected" : ""}>${esc(a.nome)}</option>`).join("")}</select>` : ""}
+        </div>
+        ${P.busy === "valor" ? `<p class="note" style="margin:0">Buscando os dados…</p>` : ""}
+        ${P.erro ? `<p class="note" style="margin:0">${esc(P.erro)}</p>` : ""}
+        <div class="btn-row">${P.erro ? `<button type="button" class="btn sm ghost" id="cfRetry">Tentar de novo</button>` : ""}<button type="button" class="btn sm ghost" id="cfMao">${P.erro ? "Digitar à mão" : "Não achou? Digitar à mão"}</button></div>
+        ${escondidos()}${placaHTML()}`;
+    };
     openForm(() => `
       <div><h2>${novo ? "Novo carro" : "Dados do carro"}</h2><p class="note">${novo ? "O carro novo já vem com a lista de manutenção padrão. Você troca de carro tocando no nome dele, na aba Carro." : "Esses dados aparecem na aba Carro e ajudam nas contas de consumo."}</p></div>
-      ${buscaHTML()}
-      ${camposHTML()}
+      ${carroHTML()}
       <div class="fld"><span>Combustível</span><div class="chips">${["Flex", ...COMBS].map((x) => `<button type="button" class="chip" data-cc="${x}" aria-pressed="${F.combustivel === x}">${x}</button>`).join("")}</div></div>
-      <label class="fld"><span>Tamanho do tanque (litros)</span><input id="cT" inputmode="decimal" placeholder="44" value="${esc(F.tanqueTxt || "")}"></label>
+      <label class="fld"><span>Tamanho do tanque (litros)</span><input id="cT" inputmode="decimal" placeholder="Ex.: 44" value="${esc(F.tanqueTxt || "")}"></label>
       <p class="hint" style="margin:0">${achou() && P.tanqueSug ? "Sugestão para este modelo. Confira no manual do carro." : "O tamanho do tanque está no manual do carro."}</p>
       <p class="err" id="fErr"></p>
       <div class="sh-actions">${!novo && atual.id !== PRINCIPAL ? `<button type="button" class="btn ghost danger" id="fDel">Excluir carro</button><span class="spacer"></span>` : ""}<button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>${novo ? "Adicionar carro" : "Salvar"}</button></div>
@@ -1780,8 +1810,14 @@ td:first-child { text-transform: capitalize; }
       if (so) so.onchange = () => { P.modelo = so.value; P.ano = ""; P.anos = null; P.res = null; P.sel = null; if (P.modelo) carregar("anos"); else { read(b); draw(); } };
       if (sa) sa.onchange = () => { P.ano = sa.value; P.res = null; P.sel = null; if (P.ano) carregar("valor"); else { read(b); draw(); } };
       if (fl && so) fl.oninput = () => { P.filtro = fl.value; so.innerHTML = opModelos(filtrados()); };
+      const rt = b.querySelector("#cfRetry");
+      if (rt) rt.onclick = () => { read(b); carregar(P.ultimo); };
       const tr = b.querySelector("#cfTrocar");
-      if (tr) tr.onclick = () => { read(b); P.res = null; P.sel = null; P.ano = ""; draw(); };
+      if (tr) tr.onclick = () => { read(b); P.res = null; P.sel = null; P.jaTinha = false; P.ano = ""; P.manual = false; if (!P.marcas) carregar("marcas"); else draw(); };
+      const mao = b.querySelector("#cfMao");
+      if (mao) mao.onclick = () => { read(b); P.manual = true; draw(); };
+      const li = b.querySelector("#cfLista");
+      if (li) li.onclick = () => { read(b); P.manual = false; if (!P.marcas) carregar("marcas"); else draw(); };
       const del = b.querySelector("#fDel");
       if (del) del.onclick = () => confirmDelete(del, async () => {
         try {
@@ -1797,7 +1833,7 @@ td:first-child { text-transform: capitalize; }
         read(b);
         const err = b.querySelector("#fErr");
         const modelo = String(F.modelo || "").trim();
-        if (!modelo) { err.textContent = "Digite o modelo do carro."; return; }
+        if (!modelo) { err.textContent = P.manual ? "Digite o modelo do carro." : "Escolha o carro na lista ou toque em Digitar à mão."; return; }
         const doc = { modelo: modelo.slice(0, 60), combustivel: F.combustivel || "Flex" };
         const ano = intOrNull(F.ano); doc.ano = ano && ano >= 1950 && ano <= 2035 ? ano : undefined;
         const placa = String(F.placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7); doc.placa = placa || undefined;
@@ -1810,20 +1846,20 @@ td:first-child { text-transform: capitalize; }
             const ts = Date.now();
             const ref = await col("carros").add(limpa({ ...doc, custos: {}, ts }));
             await criarServicosPadrao(ref.id);
-            if (P.sel && P.res) await fipeAplicar({ id: ref.id, ...doc, custos: {}, ts }, P.sel, P.res);
+            if (achou() && !P.jaTinha) await fipeAplicar({ id: ref.id, ...doc, custos: {}, ts }, P.sel, P.res);
             await saveSettings({ carroAtivo: ref.id });
             S.carroSub = "consumo";
             closeSheet(); toast(modelo + " adicionado");
           } else {
             await salvarCarro(doc, atual);
-            if (P.sel && P.res) await fipeAplicar({ ...atual, ...doc }, P.sel, P.res);
+            if (achou() && !P.jaTinha) await fipeAplicar({ ...atual, ...doc }, P.sel, P.res);
             closeSheet(); toast("Carro salvo");
           }
         } catch (e) { ev.target.disabled = false; err.textContent = dbErrMsg(e); }
       };
     });
     meu = formSeq;
-    if (busca) carregar("marcas");
+    if (busca && !P.manual && !achou()) carregar("marcas");
   }
 
   function renderResumo() {
