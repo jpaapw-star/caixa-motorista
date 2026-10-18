@@ -539,6 +539,9 @@ test("novo carro: escolhendo marca, modelo e ano na FIPE, o resto se preenche so
   await page.fill("#cP", "abc1d23");
   await page.selectOption("#cfAno", "2020-1");
   await expect(page.locator("#cfOk")).toContainText("60.000,00");
+  await expect(page.locator("#cfOk")).toContainText("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
+  await expect(page.locator("#cfMarca")).toHaveCount(0); // modelo e ano não se repetem
+  await expect(page.locator("#cM")).toBeHidden();
   await expect(page.locator("#cM")).toHaveValue("ONIX HATCH LT 1.0 12V Flex 5p Mec.");
   await expect(page.locator("#cA")).toHaveValue("2020");
   await expect(page.locator("#cT")).toHaveValue("44");

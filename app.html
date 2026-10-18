@@ -1711,23 +1711,33 @@ td:first-child { text-transform: capitalize; }
       }
       redesenhar();
     };
-    const buscaHTML = () => !busca ? "" : `<div class="fld"><span>Buscar o carro (preenche sozinho)</span>
+    const achou = () => !!(P.res && P.sel);
+    const buscaHTML = () => !busca ? "" : achou()
+      ? `<div class="cmp-out" id="cfOk"><span class="label">Seu carro · Tabela FIPE de ${esc(P.res.mes)}</span><b>${esc(F.modelo || "")}</b><span class="num">${esc(F.ano || "")} · ${brl(P.res.valor)}</span>
+          <div class="btn-row"><button type="button" class="btn sm ghost" id="cfTrocar">Trocar o carro</button></div></div>`
+      : `<div class="fld"><span>Buscar o carro (preenche sozinho)</span>
         <select id="cfMarca"${P.marcas ? "" : " disabled"}><option value="">${P.marcas ? "Escolha a marca" : "Carregando…"}</option>${(P.marcas || []).map((m) => `<option value="${esc(m.valor)}"${String(m.valor) === String(P.marca) ? " selected" : ""}>${esc(m.nome)}</option>`).join("")}</select>
         ${P.marca && P.modelos && P.modelos.length > 12 ? `<input id="cfFiltro" placeholder="Filtrar, ex.: onix 1.0" value="${esc(P.filtro)}" autocomplete="off">` : ""}
         ${P.marca ? `<select id="cfModelo"${P.modelos ? "" : " disabled"}>${opModelos(filtrados())}</select>` : ""}
         ${P.modelo ? `<select id="cfAno"${P.anos ? "" : " disabled"}><option value="">${P.anos ? "Escolha o ano" : "Carregando…"}</option>${(P.anos || []).map((a) => `<option value="${esc(a.valor)}"${String(a.valor) === String(P.ano) ? " selected" : ""}>${esc(a.nome)}</option>`).join("")}</select>` : ""}
       </div>
-      ${P.busy === "valor" ? `<p class="note" style="margin:0">Buscando os dados…</p>` : P.res ? `<p class="note" id="cfOk" style="margin:0">Achei: Tabela FIPE de ${esc(P.res.mes)}, <b class="num">${brl(P.res.valor)}</b>. Confira os dados abaixo${P.tanqueSug ? " (o tanque é uma sugestão, veja no manual)" : ""}.</p>` : ""}
-      ${P.erro ? `<p class="note" style="margin:0">${esc(P.erro)}</p>` : ""}`;
+      ${P.busy === "valor" ? `<p class="note" style="margin:0">Buscando os dados…</p>` : ""}
+      ${P.erro ? `<p class="note" style="margin:0">${esc(P.erro)}</p>` : ""}
+      ${P.marcas ? `<p class="hint" style="margin:0">Não achou? Digite abaixo.</p>` : ""}`;
+    // achou na FIPE: modelo e ano já aparecem no resumo de cima, então não se repetem nos campos
+    const camposHTML = () => achou()
+      ? `<input type="hidden" id="cM" value="${esc(F.modelo || "")}"><input type="hidden" id="cA" value="${esc(F.ano || "")}">
+        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label>`
+      : `<label class="fld"><span>Modelo</span><input id="cM" placeholder="Ex.: Onix 1.0 LT" value="${esc(F.modelo || "")}"></label>
+      <div class="row2"><label class="fld"><span>Ano</span><input id="cA" type="number" inputmode="numeric" placeholder="2020" value="${esc(F.ano || "")}"></label>
+        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label></div>`;
     openForm(() => `
       <div><h2>${novo ? "Novo carro" : "Dados do carro"}</h2><p class="note">${novo ? "O carro novo já vem com a lista de manutenção padrão. Você troca de carro tocando no nome dele, na aba Carro." : "Esses dados aparecem na aba Carro e ajudam nas contas de consumo."}</p></div>
       ${buscaHTML()}
-      <label class="fld"><span>Modelo</span><input id="cM" placeholder="Ex.: Onix 1.0 LT" value="${esc(F.modelo || "")}"></label>
-      <div class="row2"><label class="fld"><span>Ano</span><input id="cA" type="number" inputmode="numeric" placeholder="2020" value="${esc(F.ano || "")}"></label>
-        <label class="fld"><span>Placa</span><input id="cP" autocapitalize="characters" maxlength="8" placeholder="ABC1D23" value="${esc(F.placa || "")}"></label></div>
+      ${camposHTML()}
       <div class="fld"><span>Combustível</span><div class="chips">${["Flex", ...COMBS].map((x) => `<button type="button" class="chip" data-cc="${x}" aria-pressed="${F.combustivel === x}">${x}</button>`).join("")}</div></div>
       <label class="fld"><span>Tamanho do tanque (litros)</span><input id="cT" inputmode="decimal" placeholder="44" value="${esc(F.tanqueTxt || "")}"></label>
-      <p class="hint" style="margin:0">O tamanho do tanque está no manual do carro.</p>
+      <p class="hint" style="margin:0">${achou() && P.tanqueSug ? "Sugestão para este modelo. Confira no manual do carro." : "O tamanho do tanque está no manual do carro."}</p>
       <p class="err" id="fErr"></p>
       <div class="sh-actions">${!novo && atual.id !== PRINCIPAL ? `<button type="button" class="btn ghost danger" id="fDel">Excluir carro</button><span class="spacer"></span>` : ""}<button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>${novo ? "Adicionar carro" : "Salvar"}</button></div>
     `, (draw, b) => {
@@ -1740,6 +1750,8 @@ td:first-child { text-transform: capitalize; }
       if (so) so.onchange = () => { P.modelo = so.value; P.ano = ""; P.anos = null; P.res = null; P.sel = null; if (P.modelo) carregar("anos"); else { read(b); draw(); } };
       if (sa) sa.onchange = () => { P.ano = sa.value; P.res = null; P.sel = null; if (P.ano) carregar("valor"); else { read(b); draw(); } };
       if (fl && so) fl.oninput = () => { P.filtro = fl.value; so.innerHTML = opModelos(filtrados()); };
+      const tr = b.querySelector("#cfTrocar");
+      if (tr) tr.onclick = () => { read(b); P.res = null; P.sel = null; P.ano = ""; draw(); };
       const del = b.querySelector("#fDel");
       if (del) del.onclick = () => confirmDelete(del, async () => {
         try {
