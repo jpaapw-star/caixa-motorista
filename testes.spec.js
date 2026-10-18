@@ -1,4 +1,4 @@
-// Testes automáticos do RL.
+// Testes automáticos do RLCAR.
 // Cada teste abre o app num celular simulado (Android e iPhone), usa como um motorista usaria e confere os números.
 // A Tabela FIPE e a ANP são simuladas aqui, para o teste não depender da internet nem do preço da semana.
 const fs = require("fs");
@@ -104,9 +104,9 @@ test.afterEach(async ({ page }) => {
 
 test("abre e pode ser instalado", async ({ page, request }) => {
   await abrir(page);
-  await expect(page).toHaveTitle(/RL/);
+  await expect(page).toHaveTitle(/RLCAR/);
   const manifesto = await (await request.get(await page.locator('link[rel="manifest"]').getAttribute("href"))).json();
-  expect(manifesto.name).toBe("RL");
+  expect(manifesto.name).toBe("RLCAR");
   expect(manifesto.display).toBe("standalone");
   for (const icone of manifesto.icons) expect((await request.get(icone.src)).ok(), icone.src).toBeTruthy();
   await expect(page.locator("#offline")).toBeHidden();
@@ -363,7 +363,7 @@ test("celular novo ou formatado: a cópia vai pelo menu de compartilhar e volta 
   await page.click("#bkSave");
   await expect(page.locator("#toast")).toContainText("Cópia enviada");
   const enviado = await page.evaluate(() => window.__compartilhado);
-  expect(enviado.nome).toMatch(/^rl-copia-.*\.txt$/);
+  expect(enviado.nome).toMatch(/^rlcar-copia-.*\.txt$/);
   expect(JSON.parse(enviado.texto).colecoes.lancamentos).toHaveLength(1);
   await aba(page, "inicio");
   await expect(page.locator(".alerts")).toHaveCount(0);

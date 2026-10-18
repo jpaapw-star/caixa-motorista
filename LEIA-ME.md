@@ -1,4 +1,4 @@
-# RL
+# RLCAR
 
 App grátis para motorista de aplicativo: ganhos, gastos, combustível, manutenção e caixinha do carro.
 Fica no GitHub Pages (de graça) e se instala no celular pela tela inicial. Os dados de cada pessoa ficam só no celular dela.
@@ -54,7 +54,7 @@ Já tinha enviado o pacote antigo (com `index.html` e `sw.js`)? Pode apagar `ind
 
 Com isto ligado, cada motorista toca em **Salvar no Google** (em **Resumo**) e a cópia vai para uma pasta escondida do Google Drive da conta dele. No celular novo ou formatado, ele toca em **Restaurar cópia → Buscar no meu Google Drive**, entra com a mesma conta e tudo volta. Você não guarda dado de ninguém e não paga nada.
 
-1. Abra https://console.cloud.google.com e crie um projeto chamado "RL".
+1. Abra https://console.cloud.google.com e crie um projeto chamado "RLCAR".
 2. Em **APIs e serviços → Biblioteca**, procure **Google Drive API** e toque em **Ativar**.
 3. Em **Tela de permissão OAuth** (ou **Google Auth Platform**), escolha **Externo** e preencha o nome do app e o seu e-mail. Em **Público**, toque em **Publicar app**. Sem isso, só 100 pessoas de teste conseguem entrar e o login vence em 7 dias.
 4. Em **Clientes → Criar cliente**, escolha **Aplicativo da Web**. Em **Origens JavaScript autorizadas**, coloque o endereço do app sem o caminho, por exemplo `https://seunome.github.io`.
