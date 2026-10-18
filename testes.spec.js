@@ -592,3 +592,20 @@ test("novo carro: se a BrasilAPI falha, busca na reserva; e dá para digitar à 
   expect(carro.ano).toBe(1975);
   expect(carro.fipe).toBeUndefined();
 });
+
+test("Trabalho no mês mostra só o essencial e abre o resto ao tocar no título", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }));
+  const quadro = page.locator("#tab-inicio .metrics").first();
+  await expect(quadro).toContainText("Ganho por hora");
+  await expect(quadro).toContainText("Ganhos nos apps");
+  await expect(quadro).toContainText("Previsão de combustível");
+  await expect(quadro).not.toContainText("Lucro por hora");
+  await expect(quadro).not.toContainText("Km rodados vazio");
+  await page.click("#trabMais");
+  await expect(quadro).toContainText("Lucro por hora");
+  await expect(quadro).toContainText("Ganho por km c/ passageiro");
+  await page.reload(); // fica lembrado
+  await expect(page.locator("#tab-inicio .metrics").first()).toContainText("Lucro por dia");
+  await page.click("#trabMais2");
+  await expect(page.locator("#tab-inicio .metrics").first()).not.toContainText("Lucro por dia");
+});
