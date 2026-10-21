@@ -310,13 +310,17 @@ td:first-child { text-transform: capitalize; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 26px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgb(0 0 0 / .2); }
 
 /* ---- acabamento estilo Apple ---- */
-/* Cores: uma cor principal (azul do iPhone) para botões, abas e links; verde e vermelho só para dinheiro que entra e sai. */
-:root { --faixa: #007AFF; --faixa-ink: #FFFFFF; --placa: #007AFF; --ganho: #248A3D; --ganho-bg: #E3F5E8; --gasto: #D70015; --gasto-bg: #FDE7E9; --alerta: #C93400; --alerta-bg: #FFF0E0; --gas: #007AFF; --eta: #FF9500;
-  --hero: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --faixa: #0A84FF; --faixa-ink: #FFFFFF; --placa: #0A84FF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #FF9F0A; --alerta-bg: #33230A; --gas: #0A84FF; --eta: #FF9F0A;
-  --hero: linear-gradient(135deg, #0A6CFF 0%, #4B3FD6 60%, #2A1F7A 100%); } }
-:root[data-theme="dark"] { --faixa: #0A84FF; --faixa-ink: #FFFFFF; --placa: #0A84FF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #FF9F0A; --alerta-bg: #33230A; --gas: #0A84FF; --eta: #FF9F0A;
-  --hero: linear-gradient(135deg, #0A6CFF 0%, #4B3FD6 60%, #2A1F7A 100%); }
+/* Cores: preto, branco e cinza; verde e vermelho só para dinheiro (ganho, gasto, lucro negativo). */
+:root { --faixa: #000000; --faixa-ink: #FFFFFF; --placa: #000000; --ganho: #248A3D; --ganho-bg: #E3F5E8; --gasto: #D70015; --gasto-bg: #FDE7E9; --alerta: #6C6C70; --alerta-bg: rgb(120 120 128 / .12); --gas: #3A3A3C; --eta: #AEAEB2;
+  --hero: linear-gradient(145deg, #3A3A3C 0%, #1C1C1E 55%, #000000 100%); --hero-ink: #FFFFFF; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --faixa: #FFFFFF; --faixa-ink: #000000; --placa: #FFFFFF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #AEAEB2; --alerta-bg: rgb(118 118 128 / .24); --gas: #E5E5EA; --eta: #8E8E93;
+  --hero: linear-gradient(145deg, #3A3A3C 0%, #242426 55%, #161618 100%); } }
+:root[data-theme="dark"] { --faixa: #FFFFFF; --faixa-ink: #000000; --placa: #FFFFFF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #AEAEB2; --alerta-bg: rgb(118 118 128 / .24); --gas: #E5E5EA; --eta: #8E8E93;
+  --hero: linear-gradient(145deg, #3A3A3C 0%, #242426 55%, #161618 100%); }
+.lucro.pos { color: #30D158; }
+.lucro.neg { color: #FF6B60; }
+.dot { background: var(--ink); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ink) 50%, transparent); } 80%,100% { box-shadow: 0 0 0 10px transparent; } }
 body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 .card, .caixa, .ficha, .mlist, .day, .alert, .odo { border: 0; }
 .alert { border-radius: 14px; border-left: 4px solid var(--alerta); }
@@ -894,7 +898,7 @@ td { padding: 10px 6px; }
     $("#tab-inicio").innerHTML = `
       <div class="placa"><div class="placa-in">
         <div class="placa-top"><span class="label">Lucro em ${mes}</span></div>
-        <div class="lucro num">${loading ? "…" : brl(s.saldo)}</div>
+        <div class="lucro num${loading ? "" : s.saldo < 0 ? " neg" : s.saldo > 0 ? " pos" : ""}">${loading ? "…" : brl(s.saldo)}</div>
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
       ${jornadaHTML()}
