@@ -60,8 +60,8 @@ index = f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Ganhos, gastos, combustível e manutenção do carro para motoristas de aplicativo.">
-<meta name="theme-color" content="#EDF0EC" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E1311" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -87,8 +87,8 @@ manifest = {
     "scope": "./",
     "display": "standalone",
     "orientation": "portrait",
-    "background_color": "#EDF0EC",
-    "theme_color": "#EDF0EC",
+    "background_color": "#F2F2F7",
+    "theme_color": "#F2F2F7",
     "icons": [
         {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
         {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
