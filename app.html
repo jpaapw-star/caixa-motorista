@@ -310,6 +310,13 @@ td:first-child { text-transform: capitalize; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 26px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgb(0 0 0 / .2); }
 
 /* ---- acabamento estilo Apple ---- */
+/* Cores: uma cor principal (azul do iPhone) para botões, abas e links; verde e vermelho só para dinheiro que entra e sai. */
+:root { --faixa: #007AFF; --faixa-ink: #FFFFFF; --placa: #007AFF; --ganho: #248A3D; --ganho-bg: #E3F5E8; --gasto: #D70015; --gasto-bg: #FDE7E9; --alerta: #C93400; --alerta-bg: #FFF0E0; --gas: #007AFF; --eta: #FF9500;
+  --hero: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --faixa: #0A84FF; --faixa-ink: #FFFFFF; --placa: #0A84FF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #FF9F0A; --alerta-bg: #33230A; --gas: #0A84FF; --eta: #FF9F0A;
+  --hero: linear-gradient(135deg, #0A6CFF 0%, #4B3FD6 60%, #2A1F7A 100%); } }
+:root[data-theme="dark"] { --faixa: #0A84FF; --faixa-ink: #FFFFFF; --placa: #0A84FF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #FF9F0A; --alerta-bg: #33230A; --gas: #0A84FF; --eta: #FF9F0A;
+  --hero: linear-gradient(135deg, #0A6CFF 0%, #4B3FD6 60%, #2A1F7A 100%); }
 body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 .card, .caixa, .ficha, .mlist, .day, .alert, .odo { border: 0; }
 .alert { border-radius: 14px; border-left: 4px solid var(--alerta); }
@@ -326,7 +333,7 @@ body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 .card .sec-h h2 { font-size: 19px; }
 .label { letter-spacing: .02em; }
 /* destaque do mês: cartão grande com gradiente, como os banners do Apple TV */
-.placa { padding: 0; border-radius: 22px; background: radial-gradient(120% 140% at 0% 0%, #2BB673 0%, #0E6B43 38%, #06301F 100%); color: #fff; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
+.placa { padding: 0; border-radius: 22px; background: var(--hero); color: #fff; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
 .placa-in { border: 0; padding: 20px 20px 18px; gap: 6px; }
 .placa .label { color: rgb(255 255 255 / .75); text-transform: none; font-size: 14px; letter-spacing: 0; font-weight: 600; }
 .lucro { font: 800 48px/1.05 var(--f-disp); letter-spacing: -.035em; }
@@ -336,8 +343,8 @@ body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 .btn.sm { border-radius: 999px; padding: 7px 14px; font-size: 14px; }
 .btn.ghost { border: 0; background: var(--fill); }
 .btn.block { padding: 15px; font-size: 17px; }
-.link-btn { text-decoration: none; color: var(--ganho); font-size: 15px; }
-.ver-mais { text-decoration: none; color: var(--ganho); font-size: 15px; font-weight: 600; margin-top: -6px; }
+.link-btn { text-decoration: none; color: var(--faixa); font-size: 15px; }
+.ver-mais { text-decoration: none; color: var(--faixa); font-size: 15px; font-weight: 600; margin-top: -6px; }
 /* números do mês em blocos separados, como widgets */
 .metrics { background: transparent; border: 0; gap: 10px; border-radius: 0; overflow: visible; }
 .metrics > div, .metrics > .tile { border-radius: 16px; padding: 14px 16px; }
@@ -364,7 +371,7 @@ body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 /* barra de abas translúcida */
 .tabs { background: color-mix(in srgb, var(--surface) 78%, transparent); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-top: 0.5px solid var(--line); }
 .tab { font-size: 10px; font-weight: 500; }
-.tab[aria-current="page"], .tab[aria-current="page"] svg { color: var(--ganho); }
+.tab[aria-current="page"], .tab[aria-current="page"] svg { color: var(--faixa); }
 .fab { border: 0; box-shadow: 0 6px 18px rgb(0 0 0 / .3); }
 .toast { border-radius: 999px; }
 .bar-row .track, .meta-row .track { background: var(--fill); }
@@ -899,8 +906,8 @@ td { padding: 10px 6px; }
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
           const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? cd.combDia * N : null;
-          return `<button class="tile" data-calc="1"><span class="label">Combustível no mês ›</span><span class="v">${brl(s.comb)}</span><span class="hint">Qual compensa colocar?</span></button>
-          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"} ›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? brl(cd.combDia) + " por dia, no seu ritmo" : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
+          return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">Qual compensa colocar?</span></button>
+          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? brl(cd.combDia) + " por dia, no seu ritmo" : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
         ${trabAberto ? extras.join("") : ""}
       </div>
