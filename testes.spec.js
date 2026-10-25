@@ -625,3 +625,20 @@ test("telas limpas: sem quadros vazios nem informação repetida", async ({ page
   await expect(page.locator("#tab-resumo tbody tr")).toHaveCount(1);
   await expect(page.locator("#tab-resumo")).not.toContainText("Ganhos em");
 });
+
+test("dois combustíveis: gasto, média e previsão separados para gasolina e etanol", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  // gasolina faz 12 km/l (480 km com 40 L) e etanol 8 km/l (320 km com 40 L)
+  await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)] }));
+  const comb = page.locator("#tab-inicio .tile").first();
+  await expect(comb).toContainText("Gasolina");
+  await expect(comb).toContainText("Etanol");
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText("Etanol"); // previsão separada também
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("Média com gasolina");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("12,0");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("Preço médio do etanol");
+});
