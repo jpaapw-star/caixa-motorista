@@ -1,16 +1,15 @@
 <title>RLCAR</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
 <style>
-/* Layout: app de uma coluna (máx. 560px), barra de abas fixa embaixo; o painel principal é uma placa verde de rodovia com borda branca. */
+/* Layout: app de uma coluna (máx. 560px), barra de abas fixa embaixo. Visual inspirado no Apple TV e Apple Music:
+   fundo preto no modo escuro, cartões sem borda, títulos grandes em negrito, fonte do sistema e barra translúcida. */
 :root {
-  --bg: #EDF0EC;
+  --bg: #F2F2F7;
   --surface: #FFFFFF;
-  --ink: #15201A;
-  --muted: #5B6861;
-  --line: #D6DDD7;
+  --ink: #000000;
+  --muted: #6C6C70;
+  --line: #E5E5EA;
+  --fill: rgb(120 120 128 / .12);
   --placa: #0F5A3C;
   --placa-ink: #FFFFFF;
   --faixa: #F2C12E;
@@ -27,21 +26,21 @@
   --plate-ink: #15161A;
   --plate-band: #1C3F94;
   --plate-band-ink: #FFFFFF;
-  --f-disp: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --f-body: "Barlow", "Segoe UI", system-ui, sans-serif;
-  --r: 14px;
+  --f-disp: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
+  --f-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  --r: 16px;
   --nav-h: 64px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0E1311; --surface: #161D1A; --ink: #E5EBE7; --muted: #93A199; --line: #26312C;
+    --bg: #000000; --surface: #1C1C1E; --ink: #FFFFFF; --muted: #8E8E93; --line: #2C2C2E; --fill: rgb(118 118 128 / .24);
     --placa: #0D4A32; --placa-ink: #F3F8F5; --faixa: #E8B92B; --faixa-ink: #1A1608;
     --ganho: #52C483; --ganho-bg: #13291D; --gasto: #F0745F; --gasto-bg: #2E1813;
     --alerta: #E6A93C; --alerta-bg: #2E2412; --gas: #45B07A; --eta: #E8B92B; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0E1311; --surface: #161D1A; --ink: #E5EBE7; --muted: #93A199; --line: #26312C;
+  --bg: #000000; --surface: #1C1C1E; --ink: #FFFFFF; --muted: #8E8E93; --line: #2C2C2E; --fill: rgb(118 118 128 / .24);
   --placa: #0D4A32; --placa-ink: #F3F8F5; --faixa: #E8B92B; --faixa-ink: #1A1608;
   --ganho: #52C483; --ganho-bg: #13291D; --gasto: #F0745F; --gasto-bg: #2E1813;
   --alerta: #E6A93C; --alerta-bg: #2E2412; --gas: #45B07A; --eta: #E8B92B; color-scheme: dark;
@@ -60,7 +59,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--faixa); outline-offset: 2px; }
-.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 18px; }
+.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 16px; }
 .num { font-variant-numeric: tabular-nums; }
 .label { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
 
@@ -91,7 +90,7 @@ button { cursor: pointer; }
 .placa-row svg { width: 14px; height: 14px; }
 
 /* jornada */
-.jornada { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 10px; }
+.jornada { display: grid; gap: 8px; }
 .jornada p { margin: 0; color: var(--muted); font-size: 14px; }
 .jor-on { display: flex; align-items: center; gap: 10px; }
 .jor-on strong { font: 700 28px/1 var(--f-disp); }
@@ -117,7 +116,10 @@ button { cursor: pointer; }
 .sec-btn .seta { font-size: 14px; color: var(--muted); }
 .ver-mais { display: block; width: 100%; margin-top: -4px; padding: 8px; background: none; border: 0; color: var(--muted); font: 500 13px var(--f-body); text-decoration: underline; cursor: pointer; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-.metrics > div { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.metrics > div { background: var(--surface); padding: 14px 16px; display: grid; gap: 4px; min-width: 0; align-content: start; }
+.metrics .label { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; }
+.metrics > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+.metrics .hint { font-size: 12px; color: var(--muted); }
 .metrics .v { font: 600 25px/1.1 var(--f-disp); font-variant-numeric: tabular-nums; }
 .metrics .v small { font-size: 15px; color: var(--muted); font-weight: 500; }
 .hoje { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
@@ -159,7 +161,7 @@ button { cursor: pointer; }
 /* carro */
 .odo { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
 .digits { display: flex; gap: 3px; align-items: flex-end; }
-.digits span { font: 600 28px/1 var(--f-disp); background: var(--ink); color: var(--bg); width: 24px; text-align: center; padding: 6px 0 5px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+.digits span { font: 600 22px/1 var(--f-disp); background: var(--ink); color: var(--bg); width: 19px; text-align: center; padding: 5px 0 4px; border-radius: 4px; font-variant-numeric: tabular-nums; }
 .digits em { font: 500 14px/1 var(--f-body); font-style: normal; color: var(--muted); margin-left: 6px; }
 .mlist { display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .mrow { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
@@ -170,7 +172,9 @@ button { cursor: pointer; }
 .mrow .side { display: grid; justify-items: end; gap: 6px; }
 
 /* ficha e consumo */
-.ficha { display: flex; align-items: center; gap: 12px 14px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+.ficha { display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+.ficha-top { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.odo-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--line); }
 .ficha-txt { flex: 1 1 170px; min-width: 0; display: grid; gap: 2px; }
 .car-nome { font: 700 24px/1.1 var(--f-disp); overflow-wrap: anywhere; }
 .car-info { color: var(--muted); font-size: 14px; }
@@ -192,7 +196,7 @@ button { cursor: pointer; }
 .cmp-out b { font: 700 28px/1.1 var(--f-disp); }
 .check small { color: var(--muted); }
 .seg.seg4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.seg.seg4 button { padding-inline: 2px; font-size: 13px; }
+.seg.seg4 button { padding-inline: 0; font-size: 12.5px; letter-spacing: -.01em; }
 .seg button[aria-pressed="true"][data-csub] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
 .custo-hero { display: grid; gap: 4px; }
 .custo-hero b.big { font: 700 42px/1 var(--f-disp); }
@@ -202,16 +206,16 @@ button { cursor: pointer; }
 .split > b { white-space: nowrap; }
 .split small { color: var(--muted); font-size: 12px; }
 .neg { color: var(--gasto); }
-.caixa { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 6px; }
+.caixa { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 8px; }
 .caixa .big { font: 700 30px/1 var(--f-disp); }
 .link-btn { border: 0; background: none; padding: 0; font-weight: 600; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .tag-best { font-size: 11px; font-weight: 700; color: var(--ganho); background: var(--ganho-bg); border-radius: 99px; padding: 2px 7px; margin-left: 6px; white-space: nowrap; }
 .posto-grupo { display: grid; gap: 8px; }
 .car-tabs { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
 .car-tabs .chip { flex: none; }
-.odo-ritmo { flex-basis: 100%; margin: 0; }
+.odo-ritmo { margin: -6px 0 0; }
 .calc { display: grid; gap: 12px; }
-.metrics > .tile { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; border: 0; text-align: left; font: inherit; color: inherit; }
+.metrics > .tile { background: var(--surface); padding: 14px 16px; display: grid; gap: 2px; min-width: 0; border: 0; text-align: left; font: inherit; color: inherit; }
 .metrics > .tile:active { background: var(--bg); }
 .metrics .tile .hint { font-size: 12px; color: var(--muted); }
 .calc-in { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
@@ -225,7 +229,7 @@ button { cursor: pointer; }
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* resumo */
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 12px; min-width: 0; }
 .chart text { font: 11px var(--f-body); fill: var(--muted); }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); }
@@ -304,6 +308,80 @@ td:first-child { text-transform: capitalize; }
 .sh-actions .spacer { flex: 1; }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 26px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgb(0 0 0 / .2); }
+
+/* ---- acabamento estilo Apple ---- */
+/* Cores: preto, branco e cinza; verde e vermelho só para dinheiro (ganho, gasto, lucro negativo). */
+:root { --faixa: #000000; --faixa-ink: #FFFFFF; --placa: #000000; --ganho: #248A3D; --ganho-bg: #E3F5E8; --gasto: #D70015; --gasto-bg: #FDE7E9; --alerta: #6C6C70; --alerta-bg: rgb(120 120 128 / .12); --gas: #3A3A3C; --eta: #AEAEB2;
+  --hero: linear-gradient(145deg, #3A3A3C 0%, #1C1C1E 55%, #000000 100%); --hero-ink: #FFFFFF; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --faixa: #FFFFFF; --faixa-ink: #000000; --placa: #FFFFFF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #AEAEB2; --alerta-bg: rgb(118 118 128 / .24); --gas: #E5E5EA; --eta: #8E8E93;
+  --hero: linear-gradient(145deg, #3A3A3C 0%, #242426 55%, #161618 100%); } }
+:root[data-theme="dark"] { --faixa: #FFFFFF; --faixa-ink: #000000; --placa: #FFFFFF; --ganho: #30D158; --ganho-bg: #0F2A17; --gasto: #FF453A; --gasto-bg: #33140F; --alerta: #AEAEB2; --alerta-bg: rgb(118 118 128 / .24); --gas: #E5E5EA; --eta: #8E8E93;
+  --hero: linear-gradient(145deg, #3A3A3C 0%, #242426 55%, #161618 100%); }
+.lucro.pos { color: #30D158; }
+.lucro.neg { color: #FF6B60; }
+.dot { background: var(--ink); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ink) 50%, transparent); } 80%,100% { box-shadow: 0 0 0 10px transparent; } }
+body { font-size: 16px; -webkit-font-smoothing: antialiased; }
+.card, .caixa, .ficha, .mlist, .day, .alert, .odo { border: 0; }
+.alert { border-radius: 14px; border-left: 4px solid var(--alerta); }
+.alert.venc { border-left-color: var(--gasto); }
+.top { padding-block: 14px 8px; }
+.brand { font: 800 22px/1 var(--f-disp); letter-spacing: -.02em; }
+.brand i { display: none; }
+.month b { font: 600 16px/1 var(--f-body); }
+.icon-btn { border-radius: 50%; background: var(--fill); width: 32px; height: 32px; }
+.icon-btn svg { width: 16px; height: 16px; }
+.sec-h { margin-top: 6px; }
+.sec-h h2 { font: 700 22px/1.15 var(--f-disp); letter-spacing: -.02em; }
+.card .sec-h { margin-top: 0; }
+.card .sec-h h2 { font-size: 19px; }
+.label { letter-spacing: .02em; }
+/* destaque do mês: cartão grande com gradiente, como os banners do Apple TV */
+.placa { padding: 0; border-radius: 22px; background: var(--hero); color: #fff; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
+.placa-in { border: 0; padding: 20px 20px 18px; gap: 6px; }
+.placa .label { color: rgb(255 255 255 / .75); text-transform: none; font-size: 14px; letter-spacing: 0; font-weight: 600; }
+.lucro { font: 800 48px/1.05 var(--f-disp); letter-spacing: -.035em; }
+.placa-row { color: rgb(255 255 255 / .85); font-size: 14px; gap: 16px; margin-top: 4px; }
+/* botões em pílula */
+.btn { border-radius: 999px; font-weight: 600; }
+.btn.sm { border-radius: 999px; padding: 7px 14px; font-size: 14px; }
+.btn.ghost { border: 0; background: var(--fill); }
+.btn.block { padding: 15px; font-size: 17px; }
+.link-btn { text-decoration: none; color: var(--faixa); font-size: 15px; }
+.ver-mais { text-decoration: none; color: var(--faixa); font-size: 15px; font-weight: 600; margin-top: -6px; }
+/* números do mês em blocos separados, como widgets */
+.metrics { background: transparent; border: 0; gap: 10px; border-radius: 0; overflow: visible; }
+.metrics > div, .metrics > .tile { border-radius: 16px; padding: 14px 16px; }
+.metrics .v { font: 700 26px/1.1 var(--f-disp); letter-spacing: -.02em; }
+.metrics .v small { font-size: 15px; }
+.caixa .big, .custo-hero b.big { font-family: var(--f-disp); font-weight: 800; letter-spacing: -.03em; }
+.car-nome { font: 800 26px/1.1 var(--f-disp); letter-spacing: -.025em; }
+.digits span { font-family: var(--f-disp); font-weight: 700; background: var(--fill); color: var(--ink); border-radius: 6px; }
+.day-h { background: transparent; }
+.day-h b { font: 700 17px/1.2 var(--f-disp); }
+.empty { border: 0; background: var(--surface); }
+.empty b { font: 700 18px/1.2 var(--f-disp); }
+/* controles de formulário */
+.seg { background: var(--fill); border-radius: 10px; padding: 2px; gap: 2px; }
+.seg button { border-radius: 8px; padding: 8px; }
+.seg button[aria-pressed="true"][data-csub] { background: var(--surface); box-shadow: 0 3px 8px rgb(0 0 0 / .12), 0 1px 1px rgb(0 0 0 / .04); }
+.chip { border: 0; background: var(--fill); }
+.fld input, .fld select, .money { border: 0; background: var(--fill); }
+.sugestoes { border: 0; background: var(--fill); }
+.check { background: var(--fill); }
+.sheet-panel { border-radius: 14px 14px 0 0; background: var(--bg); }
+.sheet-panel h2 { font: 700 22px/1.15 var(--f-disp); letter-spacing: -.02em; }
+.sheet-bg { background: rgb(0 0 0 / .5); }
+/* barra de abas translúcida */
+.tabs { background: color-mix(in srgb, var(--surface) 78%, transparent); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-top: 0.5px solid var(--line); }
+.tab { font-size: 10px; font-weight: 500; }
+.tab[aria-current="page"], .tab[aria-current="page"] svg { color: var(--faixa); }
+.fab { border: 0; box-shadow: 0 6px 18px rgb(0 0 0 / .3); }
+.toast { border-radius: 999px; }
+.bar-row .track, .meta-row .track { background: var(--fill); }
+.day-h .meta button { border: 0; background: var(--fill); border-radius: 999px; padding: 3px 10px; }
+.caixa > .split:first-child .label { text-transform: none; letter-spacing: -.01em; font: 700 18px/1.2 var(--f-disp); color: var(--ink); }
+td { padding: 10px 6px; }
 @media (max-width: 380px) { .lucro { font-size: 40px; } .month b { min-width: 96px; } .brand { font-size: 17px; } }
 </style>
 
@@ -570,7 +648,7 @@ td:first-child { text-transform: capitalize; }
     }
     return `<div class="jornada">
       <button class="btn primary block" id="jorIni"${S.offline ? " disabled" : ""}>${ICON.play} Começar a trabalhar</button>
-      <p>Toque ao sair para rodar e de novo ao parar. As horas e os km do dia são contados sozinhos.</p>
+      ${S.dias.length ? "" : `<p>Toque ao sair para rodar e de novo ao parar. As horas e os km do dia são contados sozinhos.</p>`}
     </div>`;
   }
 
@@ -805,48 +883,51 @@ td:first-child { text-transform: capitalize; }
     const lucroDia = s.dias > 0 ? s.lucroCarro / s.dias : null;
     const perKm = s.kmDias > 0 ? s.trab / s.kmDias : null;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
+    // números extras do mês: só os que já têm valor (nada de quadro com "—")
+    const tile = (label, v) => v == null ? null : `<div><span class="label">${label}</span><span class="v">${v}</span></div>`;
+    const extras = [
+      tile("Lucro por hora", lucroH == null ? null : brl(lucroH)),
+      tile("Lucro por dia", lucroDia == null ? null : brl(lucroDia)),
+      tile("Ganho por km", perKm == null ? null : brl(perKm)),
+      tile("Por corrida", s.corridas > 0 ? brl(s.trab / s.corridas) : null),
+      tile("Km rodados vazio", s.vazioPct == null ? null : num(s.vazioPct * 100) + " <small>%</small>"),
+      tile("Ganho por km c/ passageiro", s.kmPass > 0 ? brl(s.trabPass / s.kmPass) : null),
+    ].filter(Boolean);
+    const resumoTrab = s.dias ? `<small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)}${s.corridas ? " · " + num(s.corridas) + " corridas" : ""}</small>` : "";
 
     $("#tab-inicio").innerHTML = `
       <div class="placa"><div class="placa-in">
-        <div class="placa-top"><span class="label">Lucro em ${mes}</span>${km > 0 ? `<span class="km-marco num">KM ${num(km)}</span>` : ""}</div>
-        <div class="lucro num">${loading ? "…" : brl(s.saldo)}</div>
+        <div class="placa-top"><span class="label">Lucro em ${mes}</span></div>
+        <div class="lucro num${loading ? "" : s.saldo < 0 ? " neg" : s.saldo > 0 ? " pos" : ""}">${loading ? "…" : brl(s.saldo)}</div>
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
       ${jornadaHTML()}
-      <div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>
-      <button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês <span class="seta">${trabAberto ? "▴" : "▾"}</span></h2><small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"} · ${horasStr(s.horas)} · ${num(s.corridas)} corridas</small></button>
+      ${hoje.ganhos || hoje.gastos ? `<div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>` : ""}
+      ${extras.length ? `<button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês <span class="seta">${trabAberto ? "▴" : "▾"}</span></h2>${resumoTrab}</button>` : `<div class="sec-h"><h2>Trabalho no mês</h2>${resumoTrab}</div>`}
       <div class="metrics">
-        <div><span class="label">Ganho por hora</span><span class="v">${m(perH, brl)}</span></div>
+        <div><span class="label">Ganho por hora</span><span class="v">${m(perH, brl)}</span>${perH == null ? `<span class="hint">Use “Começar a trabalhar”</span>` : ""}</div>
         <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
           const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? cd.combDia * N : null;
-          return `<button class="tile" data-calc="1"><span class="label">Combustível em ${mes} ›</span><span class="v">${brl(s.comb)}</span><span class="hint">Toque para ver qual colocar</span></button>
-          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão de combustível" : "Combustível por dia"} ›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? brl(cd.combDia) + " por dia, no seu ritmo" : "Aparece depois de 2 abastecimentos com KM") : "média do mês"}</span></button>`;
+          const cm = {}; s.L.filter((x) => x.cat === "Combustível").forEach((x) => { const c = x.comb || "Outro"; cm[c] = (cm[c] || 0) + (Number(x.valor) || 0); });
+          const combMes = Object.entries(cm).sort((a, b) => b[1] - a[1]);
+          return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : "Qual compensa colocar?"}</span></button>
+          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (Object.keys(cd.porComb).length > 1 ? Object.entries(cd.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl(v * N)).join(" · ") : brl(cd.combDia) + " por dia, no seu ritmo") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
-        ${trabAberto ? `<div><span class="label">Lucro por hora</span><span class="v">${m(lucroH, brl)}</span></div>
-        <div><span class="label">Lucro por dia</span><span class="v">${m(lucroDia, brl)}</span></div>
-        <div><span class="label">Ganho por km</span><span class="v">${m(perKm, brl)}</span></div>
-        <div><span class="label">Por corrida</span><span class="v">${m(s.corridas > 0 ? s.trab / s.corridas : null, brl)}</span></div>
-        <div><span class="label">Km rodados vazio</span><span class="v">${s.vazioPct == null ? "<small>—</small>" : num(s.vazioPct * 100) + " <small>%</small>"}</span></div>
-        <div><span class="label">Ganho por km c/ passageiro</span><span class="v">${m(s.kmPass > 0 ? s.trabPass / s.kmPass : null, brl)}</span></div>` : ""}
+        ${trabAberto ? extras.join("") : ""}
       </div>
-      <button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver todos os números do mês"}</button>
+      ${extras.length ? `<button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver mais números do mês"}</button>` : ""}
       <div class="caixa">
-        <div class="split"><span class="label">Para manter ${variosCarros() ? "os carros" : "o carro"}</span><small>${rc.D > 0 ? "média de " + brl(rc.D) + " por dia" : ""}</small></div>
+        <div class="split"><span class="label">Para manter ${variosCarros() ? "os carros" : "o carro"}</span><button class="link-btn" data-goto="carro" data-sub="custos">Detalhes</button></div>
         ${rc.D > 0 ? `<div class="split"><b class="big num">${brl(rc.faltaHoje)}<small style="font:500 15px var(--f-body);color:var(--muted)"> para separar hoje</small></b></div>
         <p class="note" style="margin:0">${statusDia(rc)}</p>
         <div class="meta-row" style="padding:0;border:0"><div class="split"><small>Separado em ${MES[new Date().getMonth()]}: ${brl(rc.cx.sepMes)}</small><small>meta ${brl(rc.metaMes)}</small></div><div class="track"><i style="width:${rc.metaMes > 0 ? Math.min(100, rc.cx.sepMes / rc.metaMes * 100) : 0}%"></i></div></div>
-        <div class="bars">${rc.cd.partes.map(([n, v]) => `<div class="split"><span>${n}</span><b class="num">${brl(v)}<small style="color:var(--muted);font-weight:500"> /dia</small></b></div>`).join("")}</div>`
-        : `<p class="note" style="margin:0">Anote abastecimentos com KM e cadastre os custos do carro para o app calcular quanto ele custa por dia.</p>`}
-        ${rc.cd.porDiaTrab ? `<p class="note" style="margin:0">Você trabalha uns ${num(rc.cd.diasTrabMes)} dias por mês, então cada dia de trabalho precisa cobrir ${brl(rc.cd.porDiaTrab)} de carro.</p>` : ""}
-        <p class="note" style="margin:0">O combustível não entra neste valor. Ele fica nos quadros de cima.</p>
+        <p class="note" style="margin:0">Média de ${brl(rc.D)} por dia, sem o combustível${rc.cd.porDiaTrab ? `, ou ${brl(rc.cd.porDiaTrab)} por dia de trabalho` : ""}.</p>`
+        : `<p class="note" style="margin:0">Cadastre os custos do carro (seguro, IPVA, manutenção) para o app dizer quanto separar por dia.</p>`}
+        ${cx.entradas || cx.saidas ? `<div class="split" style="border-top:1px solid var(--line);padding-top:8px"><span>Na caixinha</span><b class="num${cx.saldo < 0 ? " neg" : ""}">${brl(cx.saldo)}</b></div>` : ""}
+        ${pv.proximo ? `<p class="note" style="margin:0">Próximo gasto: ${esc(pv.proximo.nome)} em ${mesAno(pv.proximo.data)}, ${brl(pv.proximo.valor)}.</p>` : ""}
         <div class="btn-row"><button class="btn sm primary" id="addSep"${S.offline ? " disabled" : ""}>Separei dinheiro</button></div>
-      </div>
-      <div class="caixa">
-        <div class="split"><span class="label">Caixinha do carro</span><button class="link-btn" data-goto="carro" data-sub="custos">Ver previsão</button></div>
-        <div class="split"><b class="big num${cx.saldo < 0 ? " neg" : ""}">${brl(cx.saldo)}</b><small>separado ${brl(cx.sepMes)} · gasto ${brl(cx.gastoMes)} no mês</small></div>
-        <p class="note" style="margin:0">${pv.proximo ? `Próximo gasto: ${esc(pv.proximo.nome)} em ${mesAno(pv.proximo.data)}, ${brl(pv.proximo.valor)}.` : "Cadastre os custos e a manutenção do carro para o app prever os gastos."}</p>
       </div>
       ${alertas.length ? `<div class="sec-h"><h2>Avisos</h2><small>${alertas.length} ${alertas.length === 1 ? "aviso" : "avisos"}</small></div>
       <div class="alerts">${alertas.map((a) => `<button class="alert ${a.st}" data-goto="${a.tab || "carro"}"${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`).join("")}</div>` : ""}
@@ -857,7 +938,7 @@ td:first-child { text-transform: capitalize; }
     const s = stats(S.ym);
     const datas = [...new Set([...s.L.map((x) => x.data), ...s.D.map((d) => d.data)])].sort().reverse();
     const mes = MES[Number(S.ym.slice(5)) - 1];
-    let html = `<div class="sec-h"><h2>Histórico de ${mes}</h2><button class="btn sm ghost" id="addDia"${S.offline ? " disabled" : ""}>+ Dia de trabalho</button></div>`;
+    let html = `<div class="sec-h"><h2>Histórico</h2><button class="btn sm ghost" id="addDia"${S.offline ? " disabled" : ""}>+ Dia de trabalho</button></div>`;
     if (!datas.length) {
       html += `<div class="empty"><b>Nada anotado em ${mes}</b><span>Toque no botão amarelo para lançar um ganho ou um gasto.</span></div>`;
     }
@@ -997,10 +1078,18 @@ td:first-child { text-transform: capitalize; }
   // ----- quanto o carro custa por dia -----
   // Valor diário (sem combustível): caixinha (manutenção, IPVA,
   // licenciamento, seguro) + parcela e outros fixos + média de lavagem, estacionamento e pedágio.
+  // Parte de cada combustível nos abastecimentos dos últimos 90 dias, pelos litros (ex.: { Gasolina: 0.6, Etanol: 0.4 }).
+  function misturaComb(carId) {
+    const lim = dStr(new Date(Date.now() - 90 * 864e5));
+    const L = S.lanc.filter((x) => x.cat === "Combustível" && x.comb && x.litros > 0 && cid(x) === carId && (x.data || "") >= lim);
+    const tot = sum(L, "litros"), out = {};
+    L.forEach((x) => { out[x.comb] = (out[x.comb] || 0) + Number(x.litros) / tot; });
+    return out;
+  }
   function custoDiario() {
     const DM = 30.44;
     let comb = 0, fixos = 0, combNome = "", kmDiaTot = 0;
-    const faltam = [], porCarro = [];
+    const faltam = [], porCarro = [], porComb = {};
     for (const car of carros()) {
       const rk = ritmoKm(car.id);
       const c = car.custos || {};
@@ -1010,8 +1099,17 @@ td:first-child { text-transform: capitalize; }
       const mc = opcoesComb(car, {}, false); // só preços que você pagou (a calculadora e a ANP não mexem na previsão)
       const fd = mc.fd;
       const ck = mc.melhor ? mc.melhor.custoKm : fd.precoMedio && fd.media ? fd.precoMedio / fd.media : null;
-      if (rk && ck) {
+      // quem usa mais de um combustível: a previsão segue a sua mistura dos últimos 90 dias (pelos litros),
+      // cada parte com o custo por km do próprio combustível
+      const mix = misturaComb(car.id), partesMix = Object.entries(mix).map(([c, sh]) => [c, sh, (mc.ops.find((o) => o.comb === c) || {}).custoKm]);
+      if (rk && partesMix.length > 1 && partesMix.every(([, , k]) => k)) {
+        let dia = 0;
+        for (const [c, sh, k] of partesMix) { const v = rk.kmDia * sh * k; porComb[c] = (porComb[c] || 0) + v; dia += v; }
+        comb += dia; kmDiaTot += rk.kmDia; combNome = "";
+        porCarro.push({ nome: nomeCarro(car), id: car.id, dia });
+      } else if (rk && ck) {
         comb += rk.kmDia * ck; kmDiaTot += rk.kmDia; combNome = mc.melhor ? mc.melhor.comb.toLowerCase() : "";
+        const cn = mc.melhor ? mc.melhor.comb : combPadrao(car.id); porComb[cn] = (porComb[cn] || 0) + rk.kmDia * ck;
         porCarro.push({ nome: nomeCarro(car), id: car.id, dia: rk.kmDia * ck });
       }
       else faltam.push(nomeCarro(car));
@@ -1035,7 +1133,7 @@ td:first-child { text-transform: capitalize; }
     const diasHist = primD ? (Date.now() - new Date(primD + "T12:00")) / 864e5 : 0;
     // só mostra por dia trabalhado depois de 3 semanas de registros, para a média não sair torta
     const diasTrabMes = diasHist >= 21 ? dTrab.size / Math.max(30, diasHist) * DM : null;
-    return { partes, total, faltam, combDia: comb, kmDiaTot, combNome, porCarro, diasTrabMes, porDiaTrab: diasTrabMes >= 1 ? total * DM / diasTrabMes : null };
+    return { partes, total, faltam, combDia: comb, porComb, kmDiaTot, combNome, porCarro, diasTrabMes, porDiaTrab: diasTrabMes >= 1 ? total * DM / diasTrabMes : null };
   }
   // Quanto separar hoje: a meta do mês (custo por dia × dias do mês, contando desde que você começou a usar o app)
   // menos o que já separou nos dias anteriores, dividido pelos dias que faltam. Separou a mais, hoje cai; a menos, sobe.
@@ -1095,22 +1193,25 @@ td:first-child { text-transform: capitalize; }
 
   function renderCarro() {
     const car = carAtivo(), carId = car.id, km = kmAtual(carId), s = stats(S.ym, carId), fd = fuelData(carId), rk = ritmoKm(carId);
-    const seletor = `<div class="car-tabs">${carros().map((c) => `<button type="button" class="chip" data-car="${esc(c.id)}" aria-pressed="${c.id === carId}">${esc(nomeCarro(c))}${c.placa ? " · " + esc(c.placa) : ""}</button>`).join("")}<button type="button" class="chip" id="addCar"${S.offline ? " disabled" : ""}>+ Carro</button></div>`;
+    const seletor = !variosCarros() ? "" : `<div class="car-tabs">${carros().map((c) => `<button type="button" class="chip" data-car="${esc(c.id)}" aria-pressed="${c.id === carId}">${esc(nomeCarro(c))}</button>`).join("")}<button type="button" class="chip" id="addCar"${S.offline ? " disabled" : ""}>+ Carro</button></div>`;
     const mes = MES[Number(S.ym.slice(5)) - 1];
     const sub = S.carroSub;
     const dash = "<small>—</small>";
     const off = S.offline ? " disabled" : "";
     const digits = String(Math.round(km)).padStart(6, "0").split("");
     const info = [car.ano, car.combustivel, car.tanque ? "tanque de " + num(car.tanque, car.tanque % 1 ? 1 : 0) + " L" : ""].filter(Boolean).map(esc).join(" · ");
+    const kmHTML = `<div class="odo-in"><div class="digits num" aria-label="${num(km)} km">${digits.map((d) => `<span>${d}</span>`).join("")}<em>km</em></div>
+        <button class="btn sm ghost" id="setKm"${off}>Atualizar KM</button></div>
+        ${rk ? `<p class="note odo-ritmo">Roda uns <b class="num">${num(rk.kmDia)} km por dia</b>, cerca de ${num(rk.kmMes)} por mês${rk.poucos ? " (ainda com poucos dias de registro)" : ""}.</p>` : ""}`;
+    const addCar = `<button class="btn sm ghost" id="addCar"${off}>+ Outro carro</button>`;
     const ficha = car.modelo
-      ? `<div class="ficha"><div class="ficha-txt"><span class="label">${variosCarros() ? "Carro selecionado" : "Meu carro"}</span><b class="car-nome">${esc(car.modelo)}</b>${info ? `<span class="car-info">${info}</span>` : ""}</div>
-          ${car.placa ? `<div class="plate" aria-label="Placa ${esc(car.placa)}"><i>BRASIL</i><b>${esc(car.placa)}</b></div>` : ""}
-          <button class="btn sm ghost" id="editCar"${off}>Editar</button></div>`
-      : `<div class="ficha"><div class="ficha-txt"><b class="car-nome">Cadastre seu carro</b><span class="car-info">Modelo, ano, placa, combustível e tanque. Com o tamanho do tanque, o app calcula quantos km você roda com ele cheio.</span></div>
-          <button class="btn sm primary" id="editCar"${off}>Cadastrar</button></div>`;
-    const odo = `<div class="odo"><div><div class="label">Hodômetro</div><div class="digits num" aria-label="${num(km)} km">${digits.map((d) => `<span>${d}</span>`).join("")}<em>km</em></div></div>
-        <button class="btn sm ghost" id="setKm"${off}>Atualizar KM</button>
-        <p class="note odo-ritmo">${rk ? `Roda em média <b class="num">${num(rk.kmDia)} km por dia</b>, cerca de ${num(rk.kmMes)} por mês (${rk.fonte}${rk.poucos ? ", ainda com poucos dias de registro" : ""}).` : "Anote o KM de vez em quando para o app aprender quanto você roda por dia e prever as trocas feitas por km."}</p></div>`;
+      ? `<div class="ficha"><div class="ficha-top"><div class="ficha-txt"><b class="car-nome">${esc(car.modelo)}</b>${info ? `<span class="car-info">${info}</span>` : ""}</div>
+          ${car.placa ? `<div class="plate" aria-label="Placa ${esc(car.placa)}"><i>BRASIL</i><b>${esc(car.placa)}</b></div>` : ""}</div>
+          ${kmHTML}
+          <div class="btn-row"><button class="btn sm ghost" id="editCar"${off}>Editar carro</button>${variosCarros() ? "" : addCar}</div></div>`
+      : `<div class="ficha"><div class="ficha-txt"><b class="car-nome">Cadastre seu carro</b><span class="car-info">Escolha marca, modelo e ano e o app preenche o resto.</span></div>
+          <div class="btn-row"><button class="btn sm primary" id="editCar"${off}>Cadastrar</button>${variosCarros() ? "" : addCar}</div>
+          ${kmHTML}</div>`;
     const seg = `<div class="seg seg4">${[["consumo", "Consumo"], ["custos", "Custos"], ["manut", "Manutenção"], ["docs", "Documentos"]].map(([k, l]) => `<button type="button" data-csub="${k}" aria-pressed="${sub === k}">${l}</button>`).join("")}</div>`;
     let pane = "";
     if (sub === "consumo") {
@@ -1119,35 +1220,39 @@ td:first-child { text-transform: capitalize; }
       const prCombs = Object.keys(pr);
       const abastHTML = `<div class="sec-h"><h2>Abastecimentos</h2><button class="btn sm ghost" id="addAbast3"${off}>+ Abastecer</button></div>
         ${lst.length ? `<div class="mlist">${lst.map((f) => `<button class="frow" data-lanc="${esc(f.id)}">
-            <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b><span>${[f.posto ? esc(f.posto) : "", f.litros ? num(f.litros, 1) + " L" : "", f.preco ? brl(f.preco) + "/L" : "", f.km ? "KM " + num(f.km) : "", f.cheio === false ? "parcial" : ""].filter(Boolean).join(" · ") || esc(f.desc || "")}</span></div>
+            <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b><span>${[f.posto ? esc(f.posto) : "", f.litros ? num(f.litros, 1) + " L" : "", f.preco ? brl(f.preco) + "/L" : "", f.km ? "KM " + num(f.km) : ""].filter(Boolean).join(" · ") || esc(f.desc || "")}</span></div>
             <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.km > 0 && f.litros > 0 ? (f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
-            <span class="val x">${brl(f.valor)}</span></button>`).join("")}</div>
-          <p class="note">A média de cada tanque vai do abastecimento anterior até este. Para o número sair certo, encha o tanque e anote o KM toda vez.</p>` : ""}`;
+            <span class="val x">${brl(f.valor)}</span></button>`).join("")}</div>` : ""}`;
       const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>preço médio pago</small></div>
-        ${prCombs.length ? prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}</small></span><b class="num">${brl(p.preco)}/L</b></div>`).join("")}</div>`).join("")
-          : `<p class="note" style="margin:0">Ao abastecer, escreva o nome do posto. Aqui aparece a lista dos postos onde você paga menos por litro.</p>`}</div>`;
+        ${prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}</small></span><b class="num">${brl(p.preco)}/L</b></div>`).join("")}</div>`).join("")}</div>`;
       const custoComb = fd.precoMedio && fd.media ? fd.precoMedio / fd.media : null;
       const autonomia = car.tanque > 0 && fd.media ? car.tanque * fd.media : null;
-      const custoKm = s.span > 0 ? sum(s.L.filter((x) => x.tipo === "gasto" && GASTO_CARRO.includes(x.cat))) / s.span : null;
       const temEta = fd.trechos.some((f) => f.combTrecho === "Etanol");
       const showCmp = opcoesComb(car).ops.length > 1;
       pane = `
-        <div class="metrics">
-          <div><span class="label">Média por litro</span><span class="v">${fd.media ? num(fd.media, 1) + " <small>km/l</small>" : dash}</span></div>
-          <div><span class="label">Último tanque</span><span class="v">${fd.ultimo ? num(fd.ultimo, 1) + " <small>km/l</small>" : dash}</span></div>
-          <div><span class="label">Preço médio do litro</span><span class="v">${fd.precoMedio ? brl(fd.precoMedio) : dash}</span></div>
-          <div><span class="label">Combustível por km</span><span class="v">${custoComb ? brl(custoComb) : dash}</span></div>
-          <div><span class="label">Autonomia (tanque cheio)</span><span class="v">${autonomia ? num(autonomia) + " <small>km</small>" : dash}</span></div>
-          <div><span class="label">Combustível em ${mes}</span><span class="v">${brl(s.comb)}</span></div>
-          <div><span class="label">Rodou em ${mes}</span><span class="v">${num(s.span)} <small>km</small></span></div>
-          <div><span class="label">Custo total por km</span><span class="v">${custoKm ? brl(custoKm) : dash}</span></div>
-        </div>
+        ${(() => {
+          const t = [
+            ...(Object.keys(fd.kmlPor).length > 1
+              ? Object.entries(fd.kmlPor).map(([c, v]) => ["Média com " + c.toLowerCase(), num(v, 1) + ` <small>km/${c === "GNV" ? "m³" : "l"}</small>`])
+              : [fd.media ? ["Média por litro", num(fd.media, 1) + " <small>km/l</small>"] : null]),
+            fd.trechos.length > 1 ? ["Último tanque", num(fd.ultimo, 1) + " <small>km/l</small>"] : null,
+            ...(() => {
+              const pc = {}; fd.all.filter((f) => f.litros > 0 && f.comb).forEach((f) => { (pc[f.comb] = pc[f.comb] || [0, 0]); pc[f.comb][0] += Number(f.valor) || 0; pc[f.comb][1] += Number(f.litros); });
+              const ks = Object.keys(pc);
+              return ks.length > 1 ? ks.map((c) => ["Preço médio " + (c === "GNV" ? "do m³ de GNV" : (c === "Gasolina" ? "da " : "do ") + c.toLowerCase()), brl(pc[c][0] / pc[c][1])]) : [fd.precoMedio ? ["Preço médio do litro", brl(fd.precoMedio)] : null];
+            })(),
+            custoComb ? ["Combustível por km", brl(custoComb)] : null,
+            autonomia ? ["Rende com o tanque cheio", num(autonomia) + " <small>km</small>"] : null,
+            s.span > 0 ? ["Rodou em " + mes, num(s.span) + " <small>km</small>"] : null,
+          ].filter(Boolean);
+          return t.length ? `<div class="metrics">${t.map(([l, v]) => `<div><span class="label">${l}</span><span class="v">${v}</span></div>`).join("")}</div>` : "";
+        })()}
         ${fd.trechos.length
           ? `<div class="card"><div class="sec-h"><h2>Km por litro a cada tanque</h2><div class="legend"><span><i style="background:var(--gas)"></i>Gasolina</span>${temEta ? `<span><i style="background:var(--eta)"></i>Etanol</span>` : ""}<span><b class="dash"></b>Média</span></div></div>${chartKml(fd)}</div>`
           : `<div class="empty"><b>Sua média por litro aparece aqui</b><span>Ao abastecer, encha o tanque e anote os litros e o KM do painel. A partir do segundo abastecimento o app calcula quantos km o carro faz por litro.</span><button class="btn sm primary" id="addAbast"${off}>Anotar abastecimento</button></div>`}
         ${showCmp ? `<div class="card"><div class="sec-h"><h2>Qual combustível colocar?</h2></div>${calcHTML(car)}</div>` : ""}
         ${anpCardHTML()}
-        ${postosHTML}
+        ${prCombs.length ? postosHTML : ""}
         ${abastHTML}`;
     } else if (sub === "custos") {
       const cr = custoReal(car), cx = caixinha(), pv = previsao();
@@ -1209,7 +1314,7 @@ td:first-child { text-transform: capitalize; }
           : `<div class="empty"><b>Nenhum documento cadastrado</b><span>Anote a validade da CNH, do licenciamento, do seguro e do IPVA. O app avisa na tela inicial antes de vencer.</span><button class="btn sm primary" id="addDoc2"${off}>Adicionar documento</button></div>`}
         <p class="note">A CNH avisa 60 dias antes e os outros documentos 30 dias antes. Os apps de corrida costumam exigir CNH com a observação EAR (exerce atividade remunerada).</p>`;
     }
-    $("#tab-carro").innerHTML = seletor + ficha + odo + seg + pane;
+    $("#tab-carro").innerHTML = seletor + ficha + seg + pane;
   }
 
   // ----- custos, documentos e histórico -----
@@ -1913,20 +2018,22 @@ td:first-child { text-transform: capitalize; }
       s.L.filter((x) => x.tipo === tipo).forEach((x) => { map[x.cat] = (map[x.cat] || 0) + (Number(x.valor) || 0); });
       const arr = Object.entries(map).sort((a, b) => b[1] - a[1]);
       const top = arr.length ? arr[0][1] : 1;
-      return arr.length ? `<div class="bars">${arr.map(([c, v]) => `<div class="bar-row"><span>${esc(c)}</span><span class="num">${brl(v)}</span><div class="track"><i style="width:${(v / top) * 100}%;background:var(--${tipo})"></i></div></div>`).join("")}</div>` : `<p class="note">Nenhum ${tipo} neste mês.</p>`;
+      return arr.length ? `<div class="bars">${arr.map(([c, v]) => `<div class="bar-row"><span>${esc(c)}</span><span class="num">${brl(v)}</span><div class="track"><i style="width:${(v / top) * 100}%;background:var(--${tipo})"></i></div></div>`).join("")}</div>` : "";
     };
     const mes = MES[Number(S.ym.slice(5)) - 1];
+    const comDados = data.filter((d) => d.ganhos || d.gastos), comHoras = comDados.some((d) => d.horas > 0);
+    const ganhosCat = porCat("ganho"), gastosCat = porCat("gasto");
     $("#tab-resumo").innerHTML = `
-      <div class="card"><div class="sec-h"><h2>Últimos 6 meses</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
-        <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Ganhos</th><th>Gastos</th><th>Lucro</th><th>Por hora</th></tr></thead><tbody>
-        ${data.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td>${brl(d.ganhos)}</td><td>${brl(d.gastos)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td><td>${d.horas > 0 ? brl(d.trab / d.horas) : "—"}</td></tr>`).join("")}
-        </tbody></table></div></div>
-      <div class="card"><div class="sec-h"><h2>Ganhos por app em ${mes}</h2></div>${porCat("ganho")}</div>
-      <div class="card"><div class="sec-h"><h2>Para onde foi o dinheiro</h2></div>${porCat("gasto")}</div>
+      ${comDados.length ? `<div class="card"><div class="sec-h"><h2>Últimos 6 meses</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
+        <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th>${comHoras ? "<th>Ganho por hora</th>" : ""}</tr></thead><tbody>
+        ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td>${comHoras ? `<td>${d.horas > 0 ? brl(d.trab / d.horas) : "—"}</td>` : ""}</tr>`).join("")}
+        </tbody></table></div></div>` : `<div class="empty"><b>Nada anotado nos últimos 6 meses</b><span>Quando você lançar ganhos e gastos, o resumo aparece aqui.</span></div>`}
+      ${ganhosCat ? `<div class="card"><div class="sec-h"><h2>Ganhos em ${mes}</h2></div>${ganhosCat}</div>` : ""}
+      ${gastosCat ? `<div class="card"><div class="sec-h"><h2>Gastos em ${mes}</h2></div>${gastosCat}</div>` : ""}
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
         <p class="note" style="margin:0">${S.local ? (temGoogle()
-          ? "Os dados ficam neste celular. Toque em Salvar no Google para guardar uma cópia no Google Drive da sua conta (o app lembra toda semana). Se trocar de celular ou formatar, entre com a mesma conta em Restaurar cópia e tudo volta."
-          : "Os dados ficam só neste celular. Toque em Salvar cópia e mande para o seu Google Drive, WhatsApp ou e-mail (o app lembra toda semana). Se trocar de celular, formatar ou limpar o navegador, é a cópia que traz tudo de volta: no celular novo, toque em Restaurar cópia e escolha o arquivo.") : "A cópia de segurança leva seus dados para o app instalado no celular: salve aqui e use Restaurar cópia lá."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") + "." : ""}</p>
+          ? "Seus dados ficam neste celular. Salve uma cópia no Google Drive para não perder nada se trocar de celular."
+          : "Seus dados ficam só neste celular. Salve uma cópia (Drive, WhatsApp ou e-mail) para não perder nada se trocar de celular.") : "Salve aqui e use Restaurar cópia no app instalado para levar seus dados."}${S.settings.ultimoBackup ? " Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") + "." : ""}</p>
         <div class="exports">${temGoogle() ? `<button class="btn sm primary" id="gSave"${S.offline ? " disabled" : ""}>Salvar no Google</button>` : ""}${S.downloads ? `<button class="btn sm ${temGoogle() ? "ghost" : "primary"}" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
       <div class="card"><div class="sec-h"><h2>Ajuda</h2></div>
         <div class="exports"><button class="btn sm ghost" id="verTut">Ver o tutorial</button><button class="btn sm ghost" id="verNov">Novidades</button></div></div>
@@ -1973,6 +2080,11 @@ td:first-child { text-transform: capitalize; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 4, data: "2026-10-21", itens: [
+      "Visual novo, mais limpo, inspirado no Apple TV e no Apple Music.",
+      "Quadros sem informação e números repetidos saíram das telas. Eles aparecem quando houver dados.",
+      "Quem usa gasolina e etanol vê o gasto, a previsão do mês e a média por litro de cada combustível separados.",
+    ] },
     { v: 3, data: "2026-10-18", itens: [
       "Início mais limpo: em \"Trabalho no mês\" ficam só ganho por hora, ganhos nos apps e combustível. Toque no título para ver todos os números.",
     ] },
