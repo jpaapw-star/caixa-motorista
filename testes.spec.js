@@ -642,3 +642,14 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Preço médio do etanol");
 });
+
+test("KM digitado errado não infla a previsão nem o valor para manter o carro, e vira aviso", async ({ page }) => {
+  const ab = (d, km, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor, litros, km, ts: 100 + d });
+  // rodou 300 km em 17 dias (17,6 km por dia), mas no meio um KM saiu com 1.800 a menos
+  await abrir(page, dados({ lancamentos: [ab(-17, 175840, 200, 33.1), ab(-10, 174040, 120, 20), ab(0, 176140, 150, 25)] }));
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toContainText("174.040");
+  await aba(page, "carro");
+  await expect(page.locator("#tab-carro .odo-ritmo")).toContainText("18 km por dia"); // e não centenas
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("6,7"); // 300 km com 45 L, sem o KM errado
+});

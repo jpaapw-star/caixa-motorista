@@ -674,7 +674,35 @@ td { padding: 10px 6px; }
   }
   // Quanto o carro roda por dia: maior menos menor KM anotado nos últimos 120 dias (abastecimentos,
   // dias de trabalho, serviços e atualizações de KM), dividido pelos dias entre a primeira e a última anotação.
-  function ritmoKm(carId = carAtivoId()) {
+  // Ninguém roda mais que isso por dia com carro de app; acima disso, um dos KM foi digitado errado.
+  const KM_DIA_MAX = 600;
+  // Escolhe a maior sequência de KM anotados que faz sentido (sempre subindo, sem passar de KM_DIA_MAX por dia).
+  // Os que ficam de fora são KM digitados errado: não entram na conta e viram aviso para conferir.
+  function trechosKm(w) {
+    const pts = w.slice().sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.k - b.k));
+    const diasEntre = (a, b) => (new Date(b.d + "T12:00") - new Date(a.d + "T12:00")) / 864e5;
+    const ok = (a, b) => b.k >= a.k && b.k - a.k <= KM_DIA_MAX * Math.max(diasEntre(a, b), 1);
+    const best = pts.map(() => 1), prev = pts.map(() => -1);
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = 0; j < i; j++) if (ok(pts[j], pts[i]) && best[j] + 1 > best[i]) { best[i] = best[j] + 1; prev[i] = j; }
+    }
+    let fim = -1;
+    pts.forEach((p, i) => { if (fim < 0 || best[i] > best[fim] || (best[i] === best[fim] && p.d >= pts[fim].d)) fim = i; });
+    const cadeia = [];
+    for (let i = fim; i >= 0; i = prev[i]) cadeia.unshift(i);
+    const dentro = new Set(cadeia);
+    const suspeitos = [];
+    pts.forEach((p, i) => {
+      if (dentro.has(i)) return;
+      const antes = cadeia.filter((c) => c < i).pop(), depois = cadeia.find((c) => c > i);
+      const de = antes != null ? pts[antes] : pts[depois], para = p;
+      if (de) suspeitos.push({ de, para, dd: Math.abs(diasEntre(de, para)) });
+    });
+    if (cadeia.length < 2) return { km: 0, dias: 0, suspeitos };
+    const a = pts[cadeia[0]], b = pts[cadeia[cadeia.length - 1]];
+    return { km: b.k - a.k, dias: diasEntre(a, b), suspeitos };
+  }
+  function leiturasKm(carId) {
     const car = carById(carId) || {};
     const r = [];
     const add = (d, k) => { if (d && Number(k) > 0) r.push({ d, k: Number(k) }); };
@@ -682,16 +710,24 @@ td { padding: 10px 6px; }
     S.dias.forEach((x) => { if (cid(x) === carId) { add(x.data, x.kmIni); add(x.data, x.kmFim); } });
     S.hist.forEach((x) => { if (cid(x) === carId) add(x.data, x.km); });
     (car.leituras || []).forEach((x) => add(x.data, x.km));
+    return r;
+  }
+  // KM que não fecha com o anterior (salto impossível ou KM que volta), nos últimos 120 dias: vira aviso no Início
+  function kmParaConferir(carId) {
+    const lim = dStr(new Date(Date.now() - 120 * 864e5));
+    return trechosKm(leiturasKm(carId).filter((x) => x.d >= lim)).suspeitos;
+  }
+  function ritmoKm(carId = carAtivoId()) {
+    const car = carById(carId) || {};
+    const r = leiturasKm(carId);
     const lim = new Date(); lim.setDate(lim.getDate() - 120);
     const limS = dStr(lim);
     let w = r.filter((x) => x.d >= limS);
     if (new Set(w.map((x) => x.d)).size < 2) w = r;
-    if (w.length > 1) {
-      const ds = w.map((x) => x.d).sort(), ks = w.map((x) => x.k);
-      const dias = (new Date(ds[ds.length - 1] + "T12:00") - new Date(ds[0] + "T12:00")) / 864e5;
-      const kmR = Math.max(...ks) - Math.min(...ks);
-      if (dias >= 3 && kmR > 0) { const kmDia = kmR / dias; return { kmDia, kmMes: kmDia * 30.44, fonte: "pelos seus registros", dias: Math.round(dias), poucos: dias < 14 }; }
-    }
+    // soma só os trechos possíveis entre um KM anotado e o seguinte: um KM digitado errado (salto de milhares
+    // de km ou KM que volta) fica de fora, em vez de inflar a média e a previsão
+    const { km: kmR, dias } = trechosKm(w);
+    if (dias >= 3 && kmR > 0) { const kmDia = kmR / dias; return { kmDia, kmMes: kmDia * 30.44, fonte: "pelos seus registros", dias: Math.round(dias), poucos: dias < 14 }; }
     const c = car.custos || {};
     const est = Number(c.kmDia) > 0 ? Number(c.kmDia) : 0;
     return est > 0 ? { kmDia: est, kmMes: est * 30.44, fonte: "pela sua estimativa", estimativa: true } : null;
@@ -878,6 +914,13 @@ td { padding: 10px 6px; }
     ].filter((a) => a.st === "venc" || a.st === "breve").sort((a, b) => (a.st === "venc" ? 0 : 1) - (b.st === "venc" ? 0 : 1));
     const bk = avisoBackup();
     if (bk) alertas.push(bk);
+    carros().forEach((c) => {
+      const sus = kmParaConferir(c.id);
+      if (!sus.length) return;
+      const { de, para, dd } = sus[sus.length - 1];
+      alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Conferir", tab: "historico",
+        txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. Ele fica fora das contas até você corrigir.` });
+    });
     const perH = s.horas > 0 ? s.trab / s.horas : null;
     const lucroH = s.horas > 0 ? s.lucroCarro / s.horas : null;
     const lucroDia = s.dias > 0 ? s.lucroCarro / s.dias : null;
@@ -909,11 +952,11 @@ td { padding: 10px 6px; }
         <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
-          const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? cd.combDia * N : null;
+          const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? s.comb + cd.combDia * (N - new Date().getDate()) : null;
           const cm = {}; s.L.filter((x) => x.cat === "Combustível").forEach((x) => { const c = x.comb || "Outro"; cm[c] = (cm[c] || 0) + (Number(x.valor) || 0); });
           const combMes = Object.entries(cm).sort((a, b) => b[1] - a[1]);
           return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : "Qual compensa colocar?"}</span></button>
-          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (Object.keys(cd.porComb).length > 1 ? Object.entries(cd.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl(v * N)).join(" · ") : brl(cd.combDia) + " por dia, no seu ritmo") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
+          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (Object.keys(cd.porComb).length > 1 ? Object.entries(cd.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v * (N - new Date().getDate()))).join(" · ") : "gasto até hoje + " + brl(cd.combDia) + " por dia") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
         ${trabAberto ? extras.join("") : ""}
       </div>
@@ -972,14 +1015,16 @@ td { padding: 10px 6px; }
   function fuelData(carId = carAtivoId()) {
     const all = S.lanc.filter((x) => x.cat === "Combustível" && cid(x) === carId).map((x) => ({ ...x })).sort(byDataTs);
     let prev = null, accL = 0;
+    const sus = new Set(kmParaConferir(carId).map((x) => x.para.d + "|" + x.para.k)); // KM digitado errado: o abastecimento conta como sem KM
     for (const f of all) {
       f.preco = f.litros > 0 ? f.valor / f.litros : null;
       f.kml = null;
       const cheio = f.cheio !== false;
-      if (!(f.km > 0 && f.litros > 0)) { if (prev && f.litros > 0) accL += Number(f.litros); continue; }
+      if (!(f.km > 0 && f.litros > 0) || sus.has(f.data + "|" + Number(f.km))) { if (prev && f.litros > 0) accL += Number(f.litros); continue; }
       if (prev && f.km > prev.km) {
         accL += Number(f.litros);
-        if (cheio) { f.dist = f.km - prev.km; f.litrosTrecho = accL; f.kml = f.dist / accL; f.combTrecho = prev.comb || null; }
+        // mais de 40 km/l ou menos de 2 km/l não existe: algum KM foi digitado errado, então o trecho não entra na média
+        if (cheio && (f.km - prev.km) / accL <= 40 && (f.km - prev.km) / accL >= 2) { f.dist = f.km - prev.km; f.litrosTrecho = accL; f.kml = f.dist / accL; f.combTrecho = prev.comb || null; }
       }
       if (cheio) { prev = f; accL = 0; }
     }
@@ -2080,6 +2125,10 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 5, data: "2026-10-26", itens: [
+      "Um KM digitado errado não estraga mais as contas: ele fica de fora e aparece um aviso no Início para você corrigir.",
+      "A previsão de combustível do mês agora soma o que você já gastou com o que falta, no seu ritmo.",
+    ] },
     { v: 4, data: "2026-10-21", itens: [
       "Visual novo, mais limpo, inspirado no Apple TV e no Apple Music.",
       "Quadros sem informação e números repetidos saíram das telas. Eles aparecem quando houver dados.",
