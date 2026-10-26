@@ -653,3 +653,33 @@ test("KM digitado errado não infla a previsão nem o valor para manter o carro,
   await parte(page, "consumo");
   await expect(page.locator("#tab-carro .metrics")).toContainText("6,7"); // 300 km com 45 L, sem o KM errado
 });
+
+test("aviso de KM errado diz onde ele está e abre o registro para corrigir", async ({ page }) => {
+  const ab = (d, km, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor, litros, km, ts: 100 + d });
+  // o KM errado ficou só no histórico do serviço (o lançamento já estava certo)
+  await abrir(page, dados({
+    lancamentos: [ab(-17, 175840, 200, 33.1), ab(-10, 176040, 120, 20), ab(0, 176140, 150, 25)],
+    historico: [{ id: "h1", servico: "Troca das lâmpadas", data: dia(-10), km: 174040, valor: 30, ts: 1 }],
+  }));
+  const alerta = page.locator("#tab-inicio .alert", { hasText: "Confira um KM" });
+  await expect(alerta).toContainText("histórico de Troca das lâmpadas");
+  await alerta.click();
+  await expect(page.locator("#hK")).toHaveValue("174040");
+  await page.locator("#hK").fill("176040");
+  await page.locator("#fSave").click();
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
+});
+
+test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) => {
+  const ab = (d, km, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({
+    lancamentos: [ab(-17, 175840, 200, 33.1), ab(0, 176140, 150, 25)],
+    carros: [{ id: "principal", leituras: [{ data: dia(-10), km: 174040 }] }],
+  }));
+  const alerta = page.locator("#tab-inicio .alert", { hasText: "Confira um KM" });
+  await expect(alerta).toContainText("Atualizar KM");
+  await alerta.click();
+  await page.locator("#fDel").click();
+  await page.locator("#fDel").click();
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
+});

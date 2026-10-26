@@ -705,11 +705,12 @@ td { padding: 10px 6px; }
   function leiturasKm(carId) {
     const car = carById(carId) || {};
     const r = [];
-    const add = (d, k) => { if (d && Number(k) > 0) r.push({ d, k: Number(k) }); };
-    S.lanc.forEach((x) => { if (cid(x) === carId) add(x.data, x.km); });
-    S.dias.forEach((x) => { if (cid(x) === carId) { add(x.data, x.kmIni); add(x.data, x.kmFim); } });
-    S.hist.forEach((x) => { if (cid(x) === carId) add(x.data, x.km); });
-    (car.leituras || []).forEach((x) => add(x.data, x.km));
+    // cada KM lembra onde foi anotado, para o aviso "Confira um KM" abrir o lugar certo
+    const add = (d, k, src) => { if (d && Number(k) > 0) r.push({ d, k: Number(k), src }); };
+    S.lanc.forEach((x) => { if (cid(x) === carId) add(x.data, x.km, { t: "lanc", id: x.id, onde: "no lançamento de " + (x.cat || "gasto").toLowerCase() + " (Histórico)" }); });
+    S.dias.forEach((x) => { if (cid(x) === carId) { const o = { t: "dia", id: x.id, onde: "no dia de trabalho (Histórico)" }; add(x.data, x.kmIni, o); add(x.data, x.kmFim, o); } });
+    S.hist.forEach((x) => { if (cid(x) === carId) add(x.data, x.km, { t: "hist", id: x.id, onde: "no histórico de " + (x.servico || "serviço") + " (Carro)" }); });
+    (car.leituras || []).forEach((x) => add(x.data, x.km, { t: "leit", car: carId, d: x.data, k: Number(x.km), onde: "em Atualizar KM (Carro)" }));
     return r;
   }
   // KM que não fecha com o anterior (salto impossível ou KM que volta), nos últimos 120 dias: vira aviso no Início
@@ -918,8 +919,9 @@ td { padding: 10px 6px; }
       const sus = kmParaConferir(c.id);
       if (!sus.length) return;
       const { de, para, dd } = sus[sus.length - 1];
-      alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Conferir", tab: "historico",
-        txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. Ele fica fora das contas até você corrigir.` });
+      const src = para.src || {};
+      alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
+        txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. O ${num(para.k)} está ${src.onde || "nos seus registros"} e fica fora das contas até você corrigir.` });
     });
     const perH = s.horas > 0 ? s.trab / s.horas : null;
     const lucroH = s.horas > 0 ? s.lucroCarro / s.horas : null;
@@ -973,7 +975,7 @@ td { padding: 10px 6px; }
         <div class="btn-row"><button class="btn sm primary" id="addSep"${S.offline ? " disabled" : ""}>Separei dinheiro</button></div>
       </div>
       ${alertas.length ? `<div class="sec-h"><h2>Avisos</h2><small>${alertas.length} ${alertas.length === 1 ? "aviso" : "avisos"}</small></div>
-      <div class="alerts">${alertas.map((a) => `<button class="alert ${a.st}" data-goto="${a.tab || "carro"}"${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`).join("")}</div>` : ""}
+      <div class="alerts">${alertas.map((a) => `<button class="alert ${a.st}" ${a.kmfix ? `data-kmfix="${esc(a.kmfix)}"` : `data-goto="${a.tab || "carro"}"`}${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`).join("")}</div>` : ""}
     `;
   }
 
@@ -2520,6 +2522,43 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       };
     });
   }
+  // abre o registro onde está o KM digitado errado
+  function corrigirKm(src) {
+    if (src.t === "lanc") { const x = S.lanc.find((y) => y.id === src.id); if (x) return lancForm({ ...x, valor: x.valor, km: x.km || "", litros: x.litros ? num(x.litros, 2) : "" }); }
+    if (src.t === "dia") { const d = S.dias.find((y) => y.id === src.id); if (d) return diaForm(d); }
+    if (src.t === "hist") { const h = S.hist.find((y) => y.id === src.id); if (h) return histForm(h); }
+    if (src.t === "leit") return leituraForm(src);
+    S.tab = "historico"; render(); window.scrollTo(0, 0);
+  }
+  // KM anotado em "Atualizar KM": corrigir ou apagar
+  function leituraForm(src) {
+    const car = carById(src.car);
+    if (!car) return;
+    const igual = (x) => x.data === src.d && Number(x.km) === src.k;
+    openForm(() => `
+      <div><h2>KM de ${dBR(src.d)}</h2><p class="note">Você anotou ${num(src.k)} em Atualizar KM. Se foi erro de digitação, corrija ou apague.</p></div>
+      <label class="fld"><span>KM no painel</span><input id="lK" type="number" inputmode="numeric" value="${src.k}"></label>
+      <p class="err" id="fErr"></p>
+      <div class="sh-actions"><button type="button" class="btn ghost danger" id="fDel">Excluir</button><span class="spacer"></span><button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave">Salvar</button></div>
+    `, (draw, b) => {
+      b.querySelector("#fCancel").onclick = closeSheet;
+      const grava = async (leituras, msg) => {
+        const maior = Math.max(0, ...leituras.map((x) => Number(x.km) || 0));
+        const patch = { leituras };
+        if (Number(car.kmManual) === src.k) patch.kmManual = maior || undefined;
+        try { await salvarCarro(patch, car); closeSheet(); toast(msg); } catch (e) { b.querySelector("#fErr").textContent = dbErrMsg(e); }
+      };
+      const del = b.querySelector("#fDel");
+      del.onclick = () => confirmDelete(del, () => grava((car.leituras || []).filter((x) => !igual(x)), "KM apagado"));
+      b.querySelector("#fSave").onclick = async (ev) => {
+        const k = intOrNull(b.querySelector("#lK").value);
+        if (!k) { b.querySelector("#fErr").textContent = "Digite o KM, por exemplo 46200."; return; }
+        ev.target.disabled = true;
+        await grava((car.leituras || []).map((x) => igual(x) ? { data: x.data, km: k } : x), "KM corrigido");
+        ev.target.disabled = false;
+      };
+    });
+  }
   function kmForm() {
     openForm(() => `
       <div><h2>Atualizar KM</h2><p class="note">Olhe o painel do carro e digite o KM de agora. Quanto mais vezes você atualiza, mais certa fica a média de km por dia.</p></div>
@@ -2711,6 +2750,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const t = e.target.closest("button, [data-goto]");
     if (!t) return;
     if (t.dataset.tab) { S.tab = t.dataset.tab; render(); window.scrollTo(0, 0); return; }
+    if (t.dataset.kmfix) { corrigirKm(JSON.parse(t.dataset.kmfix)); return; }
     if (t.dataset.goto) {
       S.tab = t.dataset.goto; if (t.dataset.sub) S.carroSub = t.dataset.sub;
       if (t.dataset.gocar && t.dataset.gocar !== carAtivoId()) saveSettings({ carroAtivo: t.dataset.gocar }).catch(() => {});
