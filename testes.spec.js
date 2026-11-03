@@ -39,6 +39,7 @@ async function abrir(page, loja = { [BASE]: { ...JA_VIU } }) {
   await page.goto("./");
   await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
 }
+const dBRcurto = (d) => d.slice(8, 10) + "/" + d.slice(5, 7); // "2026-10-25" vira "25/10", como o app mostra
 const aba = (page, nome) => page.locator(`.tab[data-tab="${nome}"]`).click();
 const parte = (page, nome) => page.locator(`[data-csub="${nome}"]`).click();
 const lerLoja = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || "{}"), CHAVE);
@@ -627,9 +628,13 @@ test("telas limpas: sem quadros vazios nem informação repetida", async ({ page
 });
 
 test("dois combustíveis: gasto, média e previsão separados para gasolina e etanol", async ({ page }) => {
-  const ab = (d, km, comb, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  // dia 20 do mês: os cinco abastecimentos caem no mesmo mês, seja qual for o dia em que o teste roda
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  await page.clock.setFixedTime(base);
+  const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  const ab = (d, km, comb, valor, litros) => ({ data: d20(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
   // gasolina faz 12 km/l (480 km com 40 L) e etanol 8 km/l (320 km com 40 L)
-  await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)] }));
+  await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)], carros: [{ id: "principal", tanque: 40 }] })); // tanque de 40 L: cada um esvazia e enche, sem mistura
   const comb = page.locator("#tab-inicio .tile").first();
   await expect(comb).toContainText("Gasolina");
   await expect(comb).toContainText("Etanol");
@@ -641,6 +646,108 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
   await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Preço médio do etanol");
+});
+
+test("tanque misturado não dá ao etanol a média da gasolina", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, ts = 100 + d) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts });
+  // como aconteceu com o João: gasolina e etanol no mesmo dia, depois só completou com gasolina
+  await abrir(page, dados({ lancamentos: [
+    ab(-14, 176140, "Gasolina", 100, 16.4, 1), ab(-14, 176140, "Etanol", 138.77, 33.1, 2),
+    ab(-12, 176242, "Gasolina", 47.42, 7.97), ab(-9, 176422, "Gasolina", 118.02, 19.4), ab(0, 176722, "Gasolina", 182, 30),
+  ] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m).toContainText("confiança baixa"); // três tanques e um deles bem fora: ainda não dá para cravar
+  const v = async (c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
+  expect(await v("etanol")).toBeLessThan(await v("gasolina"));
+});
+
+// Carro de verdade: cada litro da mistura rende % de gasolina × média da gasolina + % de etanol × média do etanol.
+// Gera os abastecimentos de quem enche o tanque a cada vez, com o que sobrou misturando no que entra.
+function abastMisturados({ T = 50, kg = 12, ke = 8.4, ordem, falta = {} }) {
+  let mix = { Gasolina: 1, Etanol: 0 }, km = 50000, deve = 0;
+  const L = [{ data: dia(-40), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 300, litros: T, km, ts: 1 }];
+  ordem.forEach((comb, i) => {
+    const queimou = T * (0.6 + 0.05 * (i % 5)), d = Math.round(queimou * (mix.Gasolina * kg + mix.Etanol * ke));
+    km += d;
+    const lit = queimou + deve - (falta[i] || 0); // falta[i]: marcou "Enchi o tanque", mas faltaram esses litros
+    deve = falta[i] || 0;
+    const sobra = T - queimou, tot = sobra + lit;
+    mix = { Gasolina: (mix.Gasolina * sobra + (comb === "Gasolina" ? lit : 0)) / tot, Etanol: (mix.Etanol * sobra + (comb === "Etanol" ? lit : 0)) / tot };
+    L.push({ data: dia(-38 + 3 * i), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor: lit * 5, litros: Math.round(lit * 1000) / 1000, km, ts: 2 + i });
+  });
+  return L;
+}
+
+test("tanques misturados: as duas médias saem da conta com a porcentagem de cada tanque", async ({ page }) => {
+  // carro de verdade faz 12 km/l com gasolina e 8,4 com etanol; o motorista nunca roda um tanque puro
+  const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"] });
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m.locator("div", { hasText: "Média com gasolina" })).toContainText("12,0");
+  await expect(m.locator("div", { hasText: "Média com etanol" })).toContainText("8,4");
+  await expect(m).toContainText("confiança");
+  await expect(m).not.toContainText("confiança baixa");
+});
+
+test("tanque marcado como cheio que não encheu: o app junta com o seguinte e avisa a data", async ({ page }) => {
+  const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Gasolina", "Etanol", "Gasolina", "Etanol"], falta: { 3: 9 } });
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro")).toContainText(`O abastecimento de ${dBRcurto(L[4].data)} parece não ter enchido`);
+  const m = page.locator("#tab-carro .metrics");
+  const v = async (c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
+  expect(Math.abs((await v("gasolina")) - 12)).toBeLessThan(0.3);
+  expect(Math.abs((await v("etanol")) - 8.4)).toBeLessThan(0.3);
+});
+
+test("gasolina e etanol na mesma parada contam como um abastecimento só", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, ts) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts });
+  // R$ 60 de gasolina e completou com etanol no mesmo KM: o trecho de 400 km gastou os 40 L, e não só os 10 L da gasolina
+  await abrir(page, dados({ lancamentos: [ab(-9, 1000, "Etanol", 200, 50, 1), ab(-6, 1400, "Gasolina", 60, 10, 2), ab(-6, 1400, "Etanol", 120, 30, 3), ab(-3, 1800, "Gasolina", 240, 40, 4)], carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const lista = page.locator("#tab-carro .mlist");
+  await expect(lista).toContainText("junto");
+  await expect(lista.locator(".fk")).not.toContainText(["40,0"]); // nenhum km/l de 40
+  await expect(lista.locator(".frow").filter({ hasText: "Etanol30,0 L" }).locator(".fk")).toContainText("10,0");
+});
+
+test("parcial: o combustível que sobrou no tanque entra na mistura pelo KM rodado", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, cheio = true) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor, litros, km, ts: 100 + d });
+  // tanque de 50 L cheio de etanol; rodou 252 km (gastou 30 L a 8,4 km/l) e sobraram 20 L.
+  // Colocou 10 L de gasolina sem encher: 20 L de etanol + 10 L de gasolina = 67% etanol, e não 80%.
+  // Rodou mais 150 km com essa mistura e encheu com gasolina.
+  await abrir(page, dados({ lancamentos: [ab(-6, 1000, "Etanol", 210, 50), ab(-4, 1252, "Gasolina", 60, 10, false), ab(-2, 1402, "Gasolina", 214, 35.6)], carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  // o trecho rodou 252 km com 100% de etanol e 150 km com 67%: 88% no total (com a conta antiga, 93%)
+  await expect(page.locator("#tab-carro .frow").first()).toContainText("rodou com 88% de etanol");
+});
+
+test("parcial sem KM: a mistura do trecho fica incerta e não entra na conta de gasolina e etanol", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, cheio = true) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-6, 1000, "Etanol", 210, 50), ab(-4, null, "Gasolina", 60, 10, false), ab(-2, 1402, "Gasolina", 214, 35.6)], carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro .frow").first()).toContainText("mistura incerta");
+});
+
+test("poucos tanques com os dois combustíveis: avisa quantos faltam e não inventa as médias", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-9, 1000, "Gasolina", 300, 50), ab(-6, 1300, "Etanol", 150, 30), ab(-3, 1560, "Gasolina", 180, 28)] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro")).toContainText("Falta 1 tanque cheio com KM para separar");
+  await expect(page.locator("#tab-carro .metrics")).not.toContainText("Média com etanol");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("Média por litro");
+  // sem o tamanho do tanque, pede uma vez
+  await page.locator("#pedeTanque").click();
+  await expect(page.locator("#cT")).toBeVisible();
 });
 
 test("KM digitado errado não infla a previsão nem o valor para manter o carro, e vira aviso", async ({ page }) => {
