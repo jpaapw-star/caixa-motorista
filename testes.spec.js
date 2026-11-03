@@ -633,7 +633,7 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
   const ab = (d, km, comb, valor, litros) => ({ data: d20(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
   // gasolina faz 12 km/l (480 km com 40 L) e etanol 8 km/l (320 km com 40 L)
-  await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)] }));
+  await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)], carros: [{ id: "principal", tanque: 40 }] })); // tanque de 40 L: cada um esvazia e enche, sem mistura
   const comb = page.locator("#tab-inicio .tile").first();
   await expect(comb).toContainText("Gasolina");
   await expect(comb).toContainText("Etanol");
@@ -660,6 +660,27 @@ test("tanque misturado não dá ao etanol a média da gasolina", async ({ page }
   await expect(m).toContainText("estimada");
   const v = async (c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
   expect(await v("etanol")).toBeLessThan(await v("gasolina"));
+});
+
+test("tanques misturados: as duas médias saem da conta com a porcentagem de cada tanque", async ({ page }) => {
+  // carro de verdade faz 12 km/l com gasolina e 8,4 com etanol; o motorista nunca roda um tanque puro
+  const T = 50, kg = 12, ke = 8.4, ordem = ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"];
+  let mix = { Gasolina: 1, Etanol: 0 }, km = 50000;
+  const L = [{ data: dia(-30), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 300, litros: 50, km, ts: 1 }];
+  ordem.forEach((comb, i) => {
+    const d = 200 + 40 * i, lit = d * (mix.Gasolina / kg + mix.Etanol / ke);
+    km += d;
+    const r = (T - lit) / T;
+    mix = { Gasolina: mix.Gasolina * r + (comb === "Gasolina" ? lit / T : 0), Etanol: mix.Etanol * r + (comb === "Etanol" ? lit / T : 0) };
+    L.push({ data: dia(-26 + 3 * i), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor: lit * 5, litros: Math.round(lit * 1000) / 1000, km, ts: 2 + i });
+  });
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: T }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m.locator("div", { hasText: "Média com gasolina" })).toContainText("12,0");
+  await expect(m.locator("div", { hasText: "Média com etanol" })).toContainText("8,4");
+  await expect(m).not.toContainText("estimada");
 });
 
 test("KM digitado errado não infla a previsão nem o valor para manter o carro, e vira aviso", async ({ page }) => {
