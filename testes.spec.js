@@ -627,7 +627,11 @@ test("telas limpas: sem quadros vazios nem informação repetida", async ({ page
 });
 
 test("dois combustíveis: gasto, média e previsão separados para gasolina e etanol", async ({ page }) => {
-  const ab = (d, km, comb, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  // dia 20 do mês: os cinco abastecimentos caem no mesmo mês, seja qual for o dia em que o teste roda
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  await page.clock.setFixedTime(base);
+  const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  const ab = (d, km, comb, valor, litros) => ({ data: d20(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
   // gasolina faz 12 km/l (480 km com 40 L) e etanol 8 km/l (320 km com 40 L)
   await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)] }));
   const comb = page.locator("#tab-inicio .tile").first();
@@ -641,6 +645,21 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
   await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Preço médio do etanol");
+});
+
+test("tanque misturado não dá ao etanol a média da gasolina", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, ts = 100 + d) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts });
+  // como aconteceu com o João: gasolina e etanol no mesmo dia, depois só completou com gasolina
+  await abrir(page, dados({ lancamentos: [
+    ab(-14, 176140, "Gasolina", 100, 16.4, 1), ab(-14, 176140, "Etanol", 138.77, 33.1, 2),
+    ab(-12, 176242, "Gasolina", 47.42, 7.97), ab(-9, 176422, "Gasolina", 118.02, 19.4), ab(0, 176722, "Gasolina", 182, 30),
+  ] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m).toContainText("estimada");
+  const v = async (c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
+  expect(await v("etanol")).toBeLessThan(await v("gasolina"));
 });
 
 test("KM digitado errado não infla a previsão nem o valor para manter o carro, e vira aviso", async ({ page }) => {
