@@ -717,6 +717,39 @@ test("gasolina e etanol na mesma parada contam como um abastecimento só", async
   await expect(lista.locator(".frow").filter({ hasText: "Etanol30,0 L" }).locator(".fk")).toContainText("10,0");
 });
 
+test("parcial: o combustível que sobrou no tanque entra na mistura pelo KM rodado", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, cheio = true) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor, litros, km, ts: 100 + d });
+  // tanque de 50 L cheio de etanol; rodou 252 km (gastou 30 L a 8,4 km/l) e sobraram 20 L.
+  // Colocou 10 L de gasolina sem encher: 20 L de etanol + 10 L de gasolina = 67% etanol, e não 80%.
+  // Rodou mais 150 km com essa mistura e encheu com gasolina.
+  await abrir(page, dados({ lancamentos: [ab(-6, 1000, "Etanol", 210, 50), ab(-4, 1252, "Gasolina", 60, 10, false), ab(-2, 1402, "Gasolina", 214, 35.6)], carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  // o trecho rodou 252 km com 100% de etanol e 150 km com 67%: 88% no total (com a conta antiga, 93%)
+  await expect(page.locator("#tab-carro .frow").first()).toContainText("rodou com 88% de etanol");
+});
+
+test("parcial sem KM: a mistura do trecho fica incerta e não entra na conta de gasolina e etanol", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros, cheio = true) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-6, 1000, "Etanol", 210, 50), ab(-4, null, "Gasolina", 60, 10, false), ab(-2, 1402, "Gasolina", 214, 35.6)], carros: [{ id: "principal", tanque: 50 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro .frow").first()).toContainText("mistura incerta");
+});
+
+test("poucos tanques com os dois combustíveis: avisa quantos faltam e não inventa as médias", async ({ page }) => {
+  const ab = (d, km, comb, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-9, 1000, "Gasolina", 300, 50), ab(-6, 1300, "Etanol", 150, 30), ab(-3, 1560, "Gasolina", 180, 28)] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro")).toContainText("Falta 1 tanque cheio com KM para separar");
+  await expect(page.locator("#tab-carro .metrics")).not.toContainText("Média com etanol");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("Média por litro");
+  // sem o tamanho do tanque, pede uma vez
+  await page.locator("#pedeTanque").click();
+  await expect(page.locator("#cT")).toBeVisible();
+});
+
 test("KM digitado errado não infla a previsão nem o valor para manter o carro, e vira aviso", async ({ page }) => {
   const ab = (d, km, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor, litros, km, ts: 100 + d });
   // rodou 300 km em 17 dias (17,6 km por dia), mas no meio um KM saiu com 1.800 a menos
