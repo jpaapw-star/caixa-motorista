@@ -1013,37 +1013,67 @@ td { padding: 10px 6px; }
     return c && c !== "Flex" ? c : "Gasolina";
   }
   // Método do tanque cheio: a média de um trecho vai do tanque cheio anterior até o próximo,
-  // somando os litros de abastecimentos parciais no meio. O trecho roda com o combustível do tanque anterior.
+  // somando os litros de abastecimentos parciais no meio.
+  // Carro flex: o que entra no tanque se mistura com o que sobrou. A conta acompanha a mistura pelo tamanho do tanque.
   function fuelData(carId = carAtivoId()) {
     const all = S.lanc.filter((x) => x.cat === "Combustível" && cid(x) === carId).map((x) => ({ ...x })).sort(byDataTs);
-    let prev = null, accL = 0;
     const sus = new Set(kmParaConferir(carId).map((x) => x.para.d + "|" + x.para.k)); // KM digitado errado: o abastecimento conta como sem KM
-    // carro flex: o que entra no tanque se mistura com o que sobrou. A conta acompanha a mistura (pelo tamanho
-    // do tanque) e só dá a média de um combustível quando o tanque estava com pelo menos 80% dele.
     const T = Number((carById(carId) || {}).tanque) || 50;
-    let mix = null;
+    // mistura que o carro queimou num trecho: começa com a do tanque cheio anterior e muda a cada parcial no meio.
+    // Cada mistura pesa pelos km em que rodou (parcial sem KM: pelos litros).
+    const mixDoTrecho = (seg, kmFim) => {
+      const dist = kmFim - seg.kmIni, out = {};
+      const soma = (m, p) => { for (const [c, v] of Object.entries(m || {})) out[c] = (out[c] || 0) + v * p; };
+      let ini = 0, atual = seg.mixIni, litAc = 0;
+      for (const p of seg.parc) {
+        litAc += Number(p.litros);
+        const fr = Math.min(1, Math.max(ini, p._kmOk ? (p.km - seg.kmIni) / dist : litAc / seg.litros));
+        soma(atual, fr - ini);
+        ini = fr;
+        atual = p.mixApos;
+      }
+      soma(atual, 1 - ini);
+      return out;
+    };
+    let prev = null, accL = 0, parc = [], ultV = null, mix = null, parada = null;
     for (const f of all) {
-      f.preco = f.litros > 0 ? f.valor / f.litros : null;
+      const L = Number(f.litros) || 0;
+      f.preco = L > 0 ? f.valor / L : null;
       f.kml = null;
-      if (f.litros > 0 && f.comb) {
-        const L = Math.min(Number(f.litros), T), novo = {};
-        if (mix) for (const [c, v] of Object.entries(mix)) novo[c] = v * (T - L) / T;
-        novo[f.comb] = (novo[f.comb] || 0) + (mix ? L / T : 1);
+      // vários abastecimentos na mesma parada (mesmo KM e dia, ex.: R$ 100 de gasolina e completou com etanol) entram juntos no tanque
+      if (L > 0 && f.comb) {
+        if (!(parada && f.km > 0 && Number(f.km) === parada.km && f.data === parada.data)) parada = { km: Number(f.km) || 0, data: f.data, antes: mix, add: {} };
+        parada.add[f.comb] = (parada.add[f.comb] || 0) + L;
+        const tot = Object.values(parada.add).reduce((a, b) => a + b, 0), entra = Math.min(tot, T), novo = {};
+        if (parada.antes) for (const [c, v] of Object.entries(parada.antes)) novo[c] = (v * (T - entra)) / T;
+        for (const [c, l] of Object.entries(parada.add)) novo[c] = (novo[c] || 0) + (l / tot) * (parada.antes ? entra / T : 1);
         mix = novo;
       }
       f.mixApos = mix;
       const cheio = f.cheio !== false;
-      if (!(f.km > 0 && f.litros > 0) || sus.has(f.data + "|" + Number(f.km))) { if (prev && f.litros > 0) accL += Number(f.litros); continue; }
-      if (prev && f.km > prev.km) {
-        accL += Number(f.litros);
+      if (!(f.km > 0 && L > 0) || sus.has(f.data + "|" + Number(f.km))) { if (prev && L > 0) { accL += L; parc.push(f); } continue; }
+      let seg = null;
+      if (ultV && ultV._seg && Number(f.km) === Number(ultV.km) && f.data === ultV.data) {
+        // mesma parada: o trecho passa a terminar neste abastecimento, com os litros dos dois
+        seg = { ...ultV._seg, litros: ultV._seg.litros + L };
+        for (const k of ["_seg", "dist", "kmIni", "litrosTrecho", "kml", "mix", "combTrecho"]) delete ultV[k];
+        ultV.junto = true;
+      } else if (prev && f.km > prev.km) {
+        if (cheio) seg = { kmIni: Number(prev.km), litros: accL + L, mixIni: prev.mixApos || (prev.comb ? { [prev.comb]: 1 } : {}), parc };
+        else { accL += L; parc.push(f); f._kmOk = true; }
+      }
+      if (seg) {
+        f._seg = seg;
+        const dist = f.km - seg.kmIni, kml = dist / seg.litros;
         // mais de 40 km/l ou menos de 2 km/l não existe: algum KM foi digitado errado, então o trecho não entra na média
-        if (cheio && (f.km - prev.km) / accL <= 40 && (f.km - prev.km) / accL >= 2) { f.dist = f.km - prev.km; f.litrosTrecho = accL; f.kml = f.dist / accL;
-          f.mix = prev.mixApos || (prev.comb ? { [prev.comb]: 1 } : {});
+        if (kml <= 40 && kml >= 2) {
+          Object.assign(f, { dist, kmIni: seg.kmIni, litrosTrecho: seg.litros, kml, mix: mixDoTrecho(seg, f.km) });
           const dom = Object.entries(f.mix).sort((a, b) => b[1] - a[1])[0];
           f.combTrecho = dom && dom[1] >= 0.8 ? dom[0] : null; // null: tanque misturado
         }
       }
-      if (cheio) { prev = f; accL = 0; }
+      if (cheio || seg) { prev = f; accL = 0; parc = []; }
+      ultV = f;
     }
     const trechos = all.filter((f) => f.kml);
     const media = (arr) => { const l = sum(arr, "litrosTrecho"); return l > 0 ? sum(arr, "dist") / l : null; };
@@ -1051,32 +1081,88 @@ td { padding: 10px 6px; }
     const litTot = sum(comL, "litros");
     const ultPreco = (c) => { const r = comL.filter((f) => f.comb === c); return r.length ? r[r.length - 1].preco : null; };
     const kmlPor = Object.fromEntries(COMBS.map((c) => [c, media(trechos.filter((f) => f.combTrecho === c))]).filter(([, v]) => v));
-    const kmlEst = {};
-    // tanques misturados: cada trecho diz que litros = km × (% gasolina ÷ média da gasolina + % etanol ÷ média do etanol).
-    // Com 3 ou mais trechos de misturas diferentes, as duas médias saem da conta (mínimos quadrados). Se o resultado
-    // não fizer sentido (etanol fora de 55% a 85% da gasolina, sinal de tanque que não ficou cheio), fica a estimativa abaixo.
-    const ge = trechos.filter((f) => f.mix && (f.mix.Gasolina || 0) + (f.mix.Etanol || 0) >= 0.95);
-    // essa conta vale mais que a média dos trechos "puros", que ainda carregam até 20% do outro combustível
-    if (ge.length >= 3) {
-      let s11 = 0, s12 = 0, s22 = 0, b1 = 0, b2 = 0;
-      for (const f of ge) { const x1 = f.dist * (f.mix.Gasolina || 0), x2 = f.dist * (f.mix.Etanol || 0); s11 += x1 * x1; s12 += x1 * x2; s22 += x2 * x2; b1 += x1 * f.litrosTrecho; b2 += x2 * f.litrosTrecho; }
-      const det = s11 * s22 - s12 * s12;
-      if (s11 > 0 && s22 > 0 && det / (s11 * s22) >= 0.05) {
-        const kg = det / (b1 * s22 - b2 * s12), ke = det / (s11 * b2 - s12 * b1);
-        if (kg > 2 && ke > 2 && ke / kg >= 0.55 && ke / kg <= 0.85) { kmlPor.Gasolina = kg; kmlPor.Etanol = ke; }
-      }
-    }
-    // ainda sem as duas: estima pela regra de que o etanol rende ~70% da gasolina
-    if (!kmlPor.Gasolina && !kmlPor.Etanol) {
-      const lit = sum(ge, "litrosTrecho"), eq = ge.reduce((a, f) => a + f.dist * ((f.mix.Gasolina || 0) + (f.mix.Etanol || 0) / 0.7), 0);
-      if (lit > 0 && eq > 0) { kmlPor.Gasolina = eq / lit; kmlPor.Etanol = kmlPor.Gasolina * 0.7; kmlEst.Gasolina = kmlEst.Etanol = true; }
-    }
+    const kmlConf = {};
+    const ge = mediasGasEta(trechos), usou = new Set(comL.map((f) => f.comb));
+    if (ge) for (const c of ["Gasolina", "Etanol"]) if (usou.has(c)) { kmlPor[c] = ge[c].kml; kmlConf[c] = ge[c].conf; }
     return {
       all, trechos, media: media(trechos), ultimo: trechos.length ? trechos[trechos.length - 1].kml : null,
       precoMedio: litTot > 0 ? sum(comL) / litTot : null,
-      kmlPor, kmlEst,
+      kmlPor, kmlConf, naoEncheu: ge ? ge.naoEncheu : [],
       precoUlt: Object.fromEntries(COMBS.map((c) => [c, ultPreco(c)]).filter(([, v]) => v)),
     };
+  }
+  // ----- médias de gasolina e etanol, mesmo com o tanque misturado -----
+  // Cada litro da mistura rende: % de gasolina × média da gasolina + % de etanol × média do etanol.
+  // 1) Ponto de partida: o etanol rende uns 70% da gasolina (é a energia de cada litro).
+  // 2) "Enchi o tanque" que não encheu de verdade: os litros que faltaram aparecem no abastecimento seguinte,
+  //    e um trecho parece econômico demais enquanto o próximo parece gastar demais. Os dois viram um trecho só
+  //    e o erro se cancela. Trecho muito fora da conta (mais de 25%) fica de fora.
+  // 3) As duas médias saem dos trechos (mínimos quadrados, pesando pelos litros), puxadas para os 70% com a força
+  //    de uns poucos tanques. Com tanques variados e consistentes, os dados mandam. A conta nunca deixa o etanol
+  //    fora de 60% a 85% da gasolina.
+  // A confiança de cada média vem da incerteza da conta: até 2,5% (com 8 tanques ou mais) é alta, até 5% é média,
+  // acima disso é baixa.
+  const RAZAO_ETA = 0.7;
+  function mediasGasEta(trechos) {
+    let ts = trechos.filter((f) => f.mix && (f.mix.Gasolina || 0) + (f.mix.Etanol || 0) >= 0.95).map((f) => {
+      const g = f.mix.Gasolina || 0, e = f.mix.Etanol || 0;
+      return { d: f.dist, l: f.litrosTrecho, g: g / (g + e), e: e / (g + e), ini: f.kmIni, fim: Number(f.km), data: f.data };
+    });
+    if (!ts.length) return null;
+    const ajuste = (ts) => {
+      const n = ts.length, y = ts.map((t) => t.d / t.l), lm = ts.reduce((a, t) => a + t.l, 0) / n, w = ts.map((t) => t.l / lm);
+      const ym = y.reduce((a, v, i) => a + v * w[i], 0) / n;
+      const g0 = ts.reduce((a, t) => a + t.d, 0) / ts.reduce((a, t) => a + t.l * (t.g + RAZAO_ETA * t.e), 0);
+      const tau2 = (0.04 * g0) ** 2; // os 70% variam uns 4% de carro para carro
+      const resolve = (lam) => {
+        let a11 = lam * RAZAO_ETA ** 2, a12 = -lam * RAZAO_ETA, a22 = lam, b1 = 0, b2 = 0;
+        ts.forEach((t, i) => { a11 += w[i] * t.g * t.g; a12 += w[i] * t.g * t.e; a22 += w[i] * t.e * t.e; b1 += w[i] * t.g * y[i]; b2 += w[i] * t.e * y[i]; });
+        const det = a11 * a22 - a12 * a12;
+        let kg = (b1 * a22 - b2 * a12) / det, ke = (a11 * b2 - a12 * b1) / det;
+        if (!(ke / kg >= 0.6 && ke / kg <= 0.85)) {
+          const r = Math.min(0.85, Math.max(0.6, ke / kg || RAZAO_ETA));
+          let nu = 0, de = 0;
+          ts.forEach((t, i) => { const x = t.g + r * t.e; nu += w[i] * x * y[i]; de += w[i] * x * x; });
+          kg = nu / de; ke = r * kg;
+        }
+        const res = ts.reduce((a, t, i) => a + w[i] * (y[i] - kg * t.g - ke * t.e) ** 2, 0);
+        return { kg, ke, a11, a22, det, res };
+      };
+      // variação entre tanques: começa em 8% e passa a ser medida nos seus tanques (no mínimo 2%).
+      // Com menos de 5 trechos, a confiança não usa uma medida menor que 8%: poucos tanques não provam que a média está firme.
+      const s0 = (0.08 * ym) ** 2;
+      let s2 = s0, r = resolve(s2 / tau2);
+      if (n >= 3) for (let k = 0; k < 6; k++) { s2 = Math.max((0.02 * ym) ** 2, r.res / (n - 2)); r = resolve(s2 / tau2); }
+      if (n < 5) s2 = Math.max(s0, s2);
+      const conf = (sd, v) => (sd / v <= 0.025 && n >= 8 ? "alta" : sd / v <= 0.05 ? "média" : "baixa");
+      return { kg: r.kg, ke: r.ke, cg: conf(Math.sqrt((s2 * r.a22) / r.det), r.kg), ce: conf(Math.sqrt((s2 * r.a11) / r.det), r.ke) };
+    };
+    const desvio = (a, t) => t.d / t.l / (a.kg * t.g + a.ke * t.e) - 1;
+    // litros que faltaram (ou sobraram) no abastecimento entre dois trechos, pelo que cada trecho "devia" ter gastado
+    const falta = (a, t, sinal) => sinal * (t.l - t.d / (a.kg * t.g + a.ke * t.e));
+    let a = ajuste(ts);
+    const naoEncheu = [];
+    if (ts.length >= 3) {
+      // quanto os tanques do carro costumam variar, sem deixar o próprio erro aumentar a conta (mediana)
+      const dv = ts.map((t) => Math.abs(desvio(a, t))).sort((x, y) => x - y), varia = 1.48 * dv[Math.floor(dv.length / 2)];
+      const j = [], lim = Math.max(0.12, 2 * varia);
+      for (let i = 0; i < ts.length; i++) {
+        const t = ts[i], u = ts[i + 1];
+        const dt = desvio(a, t), du = u ? desvio(a, u) : 0;
+        // os dois trechos erram para lados opostos e pela mesma quantidade de litros: foi o abastecimento do meio
+        const m1 = u ? falta(a, t, -1) : 0, m2 = u ? falta(a, u, 1) : 0;
+        if (u && u.ini === t.fim && Math.abs(dt) > lim && Math.abs(du) > lim && dt * du < 0 && Math.abs(m1 - m2) <= 0.5 * Math.max(Math.abs(m1), Math.abs(m2))) {
+          const d = t.d + u.d;
+          j.push({ d, l: t.l + u.l, g: (t.g * t.d + u.g * u.d) / d, e: (t.e * t.d + u.e * u.d) / d, ini: t.ini, fim: u.fim, data: u.data });
+          naoEncheu.push(t.data);
+          i++;
+        } else j.push(t);
+      }
+      if (naoEncheu.length) { ts = j; a = ajuste(ts); }
+      const bons = ts.filter((t) => Math.abs(desvio(a, t)) <= 0.25);
+      if (ts.length >= 4 && bons.length >= 3 && bons.length < ts.length) { ts = bons; a = ajuste(ts); }
+    }
+    return { Gasolina: { kml: a.kg, conf: a.cg }, Etanol: { kml: a.ke, conf: a.ce }, naoEncheu };
   }
   // ----- qual combustível compensa -----
   // Custo por km de cada combustível = preço ÷ km por litro medido no seu carro.
@@ -1087,7 +1173,7 @@ td { padding: 10px 6px; }
     const base = !car.combustivel || car.combustivel === "Flex" ? ["Gasolina", "Etanol"] : car.combustivel === "GNV" ? ["GNV", "Gasolina"] : [car.combustivel];
     const lista = [...new Set([...base, ...usados])];
     const ops = lista.map((comb) => {
-      let kml = fd.kmlPor[comb] || null, est = !!fd.kmlEst[comb];
+      let kml = fd.kmlPor[comb] || null, est = fd.kmlConf[comb] === "baixa";
       if (!kml && comb === "Etanol" && fd.kmlPor.Gasolina) { kml = fd.kmlPor.Gasolina * 0.7; est = true; }
       if (!kml && comb === "Gasolina" && fd.kmlPor.Etanol) { kml = fd.kmlPor.Etanol / 0.7; est = true; }
       const raw = precos[comb];
@@ -1114,7 +1200,7 @@ td { padding: 10px 6px; }
     return `<div class="cmp-out ${b.comb === "Etanol" ? "eta" : "gas"}"><span class="label">Coloque</span><b>${b.comb}</b>
         <span>${outro ? `Cada km sai ${brl(outro.custoKm - b.custoKm)} mais barato que com ${outro.comb.toLowerCase()}.` : `Cada km custa ${brl(b.custoKm)}.`}${econ > 1 ? ` No seu ritmo de ${num(rk.kmDia)} km por dia, são uns ${brl(econ)} a menos por mês.` : ""}</span></div>
       <div class="bars">${r.validos.map((o, i) => `<div class="split"><span><b>${o.comb}</b>${i === 0 && r.validos.length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${num(o.kml, 1)} km/${o.unid}${o.est ? " (estimado)" : " no seu carro"}${car.tanque && o.unid === "L" ? ` · encher: ${brl(o.preco * car.tanque)}, rende ${num(o.kml * car.tanque)} km` : ""}</small></span><b class="num">${brl(o.custoKm)}/km</b></div>`).join("")}</div>
-      ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Consumo estimado: o etanol costuma render uns 70% da gasolina. Depois de abastecer com ele e anotar o KM, o app passa a usar o número real.</p>` : ""}
+      ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Consumo estimado: com poucos tanques, o app parte da regra de que o etanol rende uns 70% da gasolina. A cada tanque cheio anotado com KM, o número fica mais perto do real.</p>` : ""}
       ${r.ops.some((o) => !o.custoKm && o.comb === "GNV") ? `<p class="note" style="margin:0">Para comparar o GNV, anote dois abastecimentos de GNV com KM (os m³ vão no campo de litros).</p>` : ""}`;
   }
   function calcHTML(car) {
@@ -1304,7 +1390,7 @@ td { padding: 10px 6px; }
       const abastHTML = `<div class="sec-h"><h2>Abastecimentos</h2><button class="btn sm ghost" id="addAbast3"${off}>+ Abastecer</button></div>
         ${lst.length ? `<div class="mlist">${lst.map((f) => `<button class="frow" data-lanc="${esc(f.id)}">
             <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b><span>${[f.posto ? esc(f.posto) : "", f.litros ? num(f.litros, 1) + " L" : "", f.preco ? brl(f.preco) + "/L" : "", f.km ? "KM " + num(f.km) : ""].filter(Boolean).join(" · ") || esc(f.desc || "")}</span></div>
-            <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.km > 0 && f.litros > 0 ? (f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
+            <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.km > 0 && f.litros > 0 ? (f.junto ? "junto" : f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
             <span class="val x">${brl(f.valor)}</span></button>`).join("")}</div>` : ""}`;
       const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>preço médio pago</small></div>
         ${prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}</small></span><b class="num">${brl(p.preco)}/L</b></div>`).join("")}</div>`).join("")}</div>`;
@@ -1316,7 +1402,7 @@ td { padding: 10px 6px; }
         ${(() => {
           const t = [
             ...(Object.keys(fd.kmlPor).length > 1
-              ? Object.entries(fd.kmlPor).map(([c, v]) => ["Média com " + c.toLowerCase(), num(v, 1) + ` <small>km/${c === "GNV" ? "m³" : "l"}${fd.kmlEst[c] ? " · estimada" : ""}</small>`])
+              ? Object.entries(fd.kmlPor).map(([c, v]) => ["Média com " + c.toLowerCase(), num(v, 1) + ` <small>km/${c === "GNV" ? "m³" : "l"}</small>${fd.kmlConf[c] ? `<br><small>confiança ${fd.kmlConf[c]}</small>` : ""}`])
               : [fd.media ? ["Média por litro", num(fd.media, 1) + " <small>km/l</small>"] : null]),
             fd.trechos.length > 1 ? ["Último tanque", num(fd.ultimo, 1) + " <small>km/l</small>"] : null,
             ...(() => {
@@ -1329,6 +1415,15 @@ td { padding: 10px 6px; }
             s.span > 0 ? ["Rodou em " + mes, num(s.span) + " <small>km</small>"] : null,
           ].filter(Boolean);
           return t.length ? `<div class="metrics">${t.map(([l, v]) => `<div><span class="label">${l}</span><span class="v">${v}</span></div>`).join("")}</div>` : "";
+        })()}
+        ${(() => {
+          // por que a média ainda não é firme, e o que o motorista pode fazer
+          const ne = fd.naoEncheu, mostraConf = Object.keys(fd.kmlPor).length > 1 && Object.values(fd.kmlConf).includes("baixa");
+          const txt = [
+            ne.length ? (ne.length === 1 ? `O abastecimento de ${dBR(ne[0]).slice(0, 5)} parece não ter enchido o tanque igual aos outros. O app juntou esse tanque com o seguinte, e o erro se cancelou.` : `Os abastecimentos de ${ne.map((d) => dBR(d).slice(0, 5)).join(", ")} parecem não ter enchido o tanque igual aos outros. O app juntou cada um com o tanque seguinte, e o erro se cancelou.`) : "",
+            mostraConf ? "Para a média ficar firme mais rápido: encha sempre até o primeiro desarme do bico, sem completar, e de vez em quando rode dois tanques seguidos do mesmo combustível." : "",
+          ].filter(Boolean);
+          return txt.length ? `<p class="note" style="margin:0">${txt.join(" ")}</p>` : "";
         })()}
         ${fd.trechos.length
           ? `<div class="card"><div class="sec-h"><h2>Km por litro a cada tanque</h2><div class="legend"><span><i style="background:var(--gas)"></i>Gasolina</span>${temEta ? `<span><i style="background:var(--eta)"></i>Etanol</span>` : ""}<span><b class="dash"></b>Média</span></div></div>${chartKml(fd)}</div>`
@@ -2163,6 +2258,11 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 6, data: "2026-11-03", itens: [
+      "Média da gasolina e do etanol mais certa, mesmo com os dois misturados no tanque. Ao lado de cada uma aparece a confiança: baixa, média ou alta.",
+      "Se um abastecimento marcado como \"Enchi o tanque\" não encheu de verdade, o app percebe, junta esse tanque com o seguinte e avisa a data.",
+      "Gasolina e etanol na mesma parada (mesmo KM) contam como um abastecimento só.",
+    ] },
     { v: 5, data: "2026-10-26", itens: [
       "Um KM digitado errado não estraga mais as contas: ele fica de fora e aparece um aviso no Início para você corrigir.",
       "A previsão de combustível do mês agora soma o que você já gastou com o que falta, no seu ritmo.",
