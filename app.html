@@ -995,6 +995,7 @@ td { padding: 10px 6px; }
       ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}% · a gasolina já tem ${Math.round(ETANOL_NA_GASOLINA * 100)}% de etanol</small>` : ""}
       <small class="num" style="color:var(--muted)">${num(t.litros, 0)} L estimados de ${num(t.T)} L · ${quando}</small>
       ${baixa ? `<p class="note" style="margin:0">Estimativa de mistura ainda não confiável: ${esc(t.motivos.join("; ") || "poucos dados")}.</p>` : t.conf === "média" && t.motivos.length ? `<p class="note" style="margin:0">Aproximação: ${esc(t.motivos.join("; "))}.</p>` : ""}
+      ${t.conf !== "alta" && t.dicas.length ? `<p class="note" style="margin:0"><b>Para melhorar a confiança:</b> ${esc(t.dicas.join("; "))}.</p>` : ""}
       ${ecTxt}
     </div>`;
   }
@@ -1649,8 +1650,24 @@ td { padding: 10px 6px; }
     if (consumoFraco) motivos.push("o gasto desde o último abastecimento usa médias ainda com confiança baixa");
     const conf = ult.semRef || (inc > 0.2 && u == null) || (!ult.km && !kmEst) ? "baixa"
       : inc > 0.05 || consumoFraco || !ult.km || ult.kmEst ? "média" : "alta";
+    // o que fazer para a confiança subir, só com o que já se anota no abastecimento
+    const dicas = [];
+    const semKm = !ult.km || ult.kmEst, encher = ult.semRef || consumoFraco;
+    if (semKm && encher) dicas.push("no próximo abastecimento, encha até o bico desligar, deixe marcado \"Enchi o tanque\" e anote o KM");
+    else if (semKm) dicas.push("anote o KM em todo abastecimento");
+    else if (encher) dicas.push("sempre que der, encha até o bico desligar e deixe marcado \"Enchi o tanque\"; cada tanque cheio firma as médias");
+    if (consumoFraco) {
+      // médias se separam quando os tanques têm misturas diferentes; com todos parecidos, um tanque do outro ajuda
+      const rec = fd.trechos.filter((f) => f.mix && (f.mix.Gasolina || 0) + (f.mix.Etanol || 0) >= 0.9).slice(-6)
+        .map((f) => (f.mix.Etanol || 0) / ((f.mix.Gasolina || 0) + (f.mix.Etanol || 0)));
+      if (rec.length >= 2 && Math.max(...rec) - Math.min(...rec) < 0.3) {
+        const m = rec.reduce((a, b) => a + b, 0) / rec.length;
+        dicas.push(`um tanque cheio só de ${m >= 0.5 ? "gasolina" : "etanol"} de vez em quando separa as médias mais rápido`);
+      }
+    }
+    if (inc > 0.05) dicas.push("a parte que já estava no tanque diminui sozinha a cada abastecimento");
     const origem = rodou > 0 ? "estimativa de consumo" : ult.cheio !== false ? "tanque cheio" : "abastecimento";
-    return { litros, porComb, T, inc, conf, motivos, origem, data: ult.data, kmRef: Number(ult.km) || null, rodou,
+    return { litros, porComb, T, inc, conf, motivos, dicas, origem, data: ult.data, kmRef: Number(ult.km) || null, rodou,
       valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
   }
 
@@ -2976,6 +2993,9 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 11, data: "2026-11-04", itens: [
+      "Mistura do tanque: quando a confiança não é alta, o cartão mostra o que fazer no abastecimento para ela subir.",
+    ] },
     { v: 10, data: "2026-11-04", itens: [
       "Previsão do mês pelos abastecimentos: com o tamanho do tanque, o app calcula quando você vai abastecer de novo e soma os abastecimentos que ainda cabem no mês.",
       "O app aprende com o próprio erro: guarda a previsão de cada dia e, no fim do mês, corrige sozinho se ela saiu alta ou baixa.",

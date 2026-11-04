@@ -1050,6 +1050,8 @@ test("parcial sem KM: os km saem dos dias e a mistura continua com confiança m�
   await expect(tq).toContainText("confiança média");
   await expect(tq).toContainText("%");
   await expect(tq).not.toContainText("não confiável");
+  await expect(tq).toContainText("Para melhorar a confiança:");
+  await expect(tq).toContainText("anote o KM");
 });
 
 test("o que já estava no tanque antes do primeiro registro é estimado pelo consumo", async ({ page }) => {
