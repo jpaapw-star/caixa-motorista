@@ -1611,16 +1611,13 @@ td { padding: 10px 6px; }
       const showCmp = opcoesComb(car).ops.length > 1;
       pane = `
         ${(() => {
-          // em pares: as médias lado a lado, os preços lado a lado, depois último tanque e custo por km
-          const pc = {}; fd.all.filter((f) => f.litros > 0 && f.comb).forEach((f) => { (pc[f.comb] = pc[f.comb] || [0, 0]); pc[f.comb][0] += Number(f.valor) || 0; pc[f.comb][1] += Number(f.litros); });
-          const ks = Object.keys(pc);
+          // em pares: as médias lado a lado, depois último tanque e preço por km (preço do litro fica na calculadora e nos postos)
           const t = [
             ...(Object.keys(fd.kmlPor).length > 1
               ? Object.entries(fd.kmlPor).map(([c, v]) => ["Média com " + c.toLowerCase(), num(v, 1) + ` <small>km/${c === "GNV" ? "m³" : "l"}</small>${fd.kmlConf[c] ? `<br><small>confiança ${fd.kmlConf[c]}</small>` : ""}`])
               : [fd.media ? ["Média por litro", num(fd.media, 1) + " <small>km/l</small>"] : null]),
-            ...(ks.length > 1 ? ks.map((c) => ["Preço " + (c === "GNV" ? "do m³ de GNV" : (c === "Gasolina" ? "da " : "do ") + c.toLowerCase()), brl(pc[c][0] / pc[c][1])]) : [fd.precoMedio ? ["Preço do litro", brl(fd.precoMedio)] : null]),
             fd.trechos.length > 1 ? ["Último tanque", num(fd.ultimo, 1) + " <small>km/l</small>"] : null,
-            custoComb ? ["Combustível por km", brl(custoComb)] : null,
+            custoComb ? ["Preço por km", brl(custoComb)] : null,
             autonomia ? ["Rende por tanque", num(autonomia) + " <small>km</small>" + (Object.keys(fd.kmlPor).length > 1 ? `<br><small>com ${combAut.toLowerCase()}</small>` : "")] : null,
             s.span > 0 ? ["Rodou em " + mes, num(s.span) + " <small>km</small>"] : null,
           ].filter(Boolean);
@@ -2487,7 +2484,7 @@ td { padding: 10px 6px; }
   const NOVIDADES = [
     { v: 8, data: "2026-11-04", itens: [
       "Previsão do combustível do mês desconta o que já está no tanque (já foi pago) e conta quanto você roda em cada dia da semana, pelos seus ganhos ou pelo KM do dia. Com algumas semanas de registros, mostra também uma faixa (entre quanto e quanto).",
-      "Tela de consumo organizada em pares: médias, preços, último tanque e custo por km.",
+      "Tela de consumo organizada em pares: médias, último tanque e preço por km.",
     ] },
     { v: 7, data: "2026-11-04", itens: [
       "Início mais limpo: saíram o botão \"Começar a trabalhar\", o ganho por hora e o lucro por hora.",

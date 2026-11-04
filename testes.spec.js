@@ -622,8 +622,8 @@ test("telas limpas: sem quadros vazios nem informação repetida", async ({ page
   // Carro: um carro só, sem fileira de carros; o combustível do mês não se repete aqui
   await aba(page, "carro");
   await expect(page.locator("#tab-carro .car-tabs")).toHaveCount(0);
-  await expect(page.locator("#tab-carro .metrics")).not.toContainText("Combustível no mês");
-  await expect(page.locator("#tab-carro .metrics")).not.toContainText("—");
+  await expect(page.locator("#tab-carro")).not.toContainText("Combustível no mês");
+  await expect(page.locator("#tab-carro .metrics")).toHaveCount(0); // um abastecimento só: nenhum número de consumo ainda, nada de quadro com "—"
   // Resumo: só os meses com algo anotado; sem cartão de ganhos vazio
   await aba(page, "resumo");
   await expect(page.locator("#tab-resumo tbody tr")).toHaveCount(1);
@@ -648,9 +648,9 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(page.locator("#tab-carro .metrics")).toContainText("12,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
   await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
-  await expect(page.locator("#tab-carro .metrics")).toContainText("Preço do etanol");
+  await expect(page.locator("#tab-carro .metrics")).not.toContainText("Preço do etanol"); // preço do litro fica na calculadora
   // por km: Σ(litros × preço) ÷ Σ(litros × km/l) = (120×6,25 + 80×4) ÷ (120×12 + 80×8) = R$ 0,51 (pelos litros seria R$ 0,54)
-  await expect(page.locator("#tab-carro .metrics div", { hasText: "Combustível por km" })).toContainText("R$ 0,51");
+  await expect(page.locator("#tab-carro .metrics div", { hasText: "Preço por km" })).toContainText("R$ 0,51");
 });
 
 test("tanque misturado não dá ao etanol a média da gasolina", async ({ page }) => {
