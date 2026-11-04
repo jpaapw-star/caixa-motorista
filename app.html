@@ -244,6 +244,13 @@ button { cursor: pointer; }
 .mais > summary::after { content: " ›"; }
 .mais[open] > summary::after { content: " ⌄"; }
 .mais > div { display: grid; gap: 6px; padding-top: 6px; }
+.comb-prev { grid-column: 1 / -1; }
+.cp-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; width: 100%; }
+.cp-row .hint { display: block; }
+.cp-dir { text-align: right; }
+.cp-prev { color: var(--muted); }
+.cp-bar { display: block; width: 100%; height: 6px; margin-top: 10px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.cp-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ink); }
 .mix-leg { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .mix-leg b { font: 700 22px/1.1 var(--f-disp); }
 .tanque-baixa .mix-leg b { color: var(--muted); }
@@ -1226,6 +1233,13 @@ td { padding: 10px 6px; }
           const combMes = Object.entries(cm).sort((a, b) => b[1] - a[1]);
           // todo o gasto do mês é combustível: o total já está no destaque, aqui vai a média por dia
           const soComb = s.comb > 0 && Math.abs(s.comb - s.gastos) < 0.01, dd = atual ? new Date().getDate() : N;
+          // mês atual com previsão: um quadro só, gasto até hoje × previsão, com a barra do quanto já foi
+          if (atual && prev) {
+            const prox = pc.porAbast && pc.abast.length ? " · abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "";
+            return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
+            <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">gasto até hoje</span></span><span class="cp-dir"><span class="v cp-prev">${brl(prev)}</span><span class="hint">previsão${prox}</span></span></span>
+            <span class="cp-bar"><i style="width:${Math.min(100, (s.comb / prev) * 100).toFixed(1)}%"></i></span></button>`;
+          }
           return `<button class="tile" data-calc="1"><span class="label">${soComb ? "Combustível por dia" : "Combustível no mês"}&nbsp;›</span><span class="v">${brl(soComb ? s.comb / dd : s.comb)}</span></button>
           <button class="tile" ${atual && prev ? "data-prev" : "data-calc"}="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (pc.porAbast && pc.abast.length ? "abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
@@ -3391,7 +3405,8 @@ td { padding: 10px 6px; }
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
     { v: 14, data: "2026-11-04", itens: [
-      "Menos texto: as telas mostram só os números. Explicações ficam em \"Detalhes\" e na Previsão do mês (toque nela).",
+      "Menos texto: as telas mostram só os números. Explicações ficam em \"Detalhes\".",
+      "Combustível do mês e previsão num quadro só, com a barra do quanto já foi gasto. Toque nele para ver os detalhes da previsão.",
     ] },
     { v: 13, data: "2026-11-04", itens: [
       "Foto do painel: no lançamento, \"Ler de um print, cupom ou painel\" preenche o KM e guarda o nível do combustível. Com o tempo o app aprende o ponteiro do seu carro e acerta melhor a mistura do tanque.",

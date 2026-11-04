@@ -106,7 +106,7 @@ test.afterEach(async ({ page }) => {
 
 // a previsão do mês mostra os detalhes (faixa, parte de cada combustível, ajustes) ao tocar nela
 async function abrirPrev(page) {
-  await page.locator("#tab-inicio .tile").nth(1).click();
+  await page.locator("#tab-inicio .comb-prev").click();
   return page.locator("#sheetBody");
 }
 
@@ -928,7 +928,7 @@ test("previsão do mês desconta o combustível que já está no tanque", async 
   const N = new Date(y, mo, 0).getDate();
   const esperado = 500 + 25 * (N - 15) - 100;
   const brl = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  await expect(page.locator("#tab-inicio .tile").nth(1).locator(".v")).toHaveText(brl(esperado));
+  await expect(page.locator("#tab-inicio .cp-prev")).toHaveText(brl(esperado));
 });
 
 test("previsão do mês mostra a faixa quando os km da semana variam", async ({ page }) => {
@@ -987,8 +987,8 @@ test("previsão do mês pelos abastecimentos que ainda cabem no mês", async ({ 
   await page.clock.setFixedTime(base);
   await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }));
   // encheu no dia 14; 4 L por dia: vazio no dia 24, quando entra outro tanque de R$ 250. Gasto até hoje R$ 500.
-  const tile = page.locator("#tab-inicio .tile").nth(1);
-  await expect(tile.locator(".v")).toHaveText(brlT(750));
+  const tile = page.locator("#tab-inicio .comb-prev");
+  await expect(tile.locator(".cp-prev")).toHaveText(brlT(750));
   await expect(tile).toContainText("abastecer dia 24/" + String(mo).padStart(2, "0"));
 });
 
