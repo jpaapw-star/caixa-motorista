@@ -1,0 +1,60 @@
+# Robô do leitor de fotos do RLCAR (script do Google que pergunta ao Gemini).
+# Publica a pasta leitor/ no Apps Script sempre que ela muda, ou pelo botão "Run workflow".
+# Precisa destes segredos no GitHub (Settings > Secrets and variables > Actions):
+#   CLASPRC_JSON      o login do clasp (o mesmo arquivo .clasprc.json usado nos outros apps)
+#   LEITOR_SCRIPT_ID  o ID do projeto do Apps Script "RLCAR leitor"
+#   GEMINI_CHAVE      a chave do Gemini (AI Studio); vai só para o script do Google, nunca para o site
+#   LEITOR_DEPLOY_ID  (opcional) o ID da implantação; sem ele, a primeira publicação cria uma e mostra o ID no registro
+# Sem os três primeiros, o robô só avisa e não faz nada.
+name: Publicar o leitor de fotos
+
+on:
+  push:
+    branches: [main]
+    paths: ["leitor/**", ".github/workflows/leitor.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  leitor:
+    name: Leitor de fotos (Apps Script)
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC: ${{ secrets.CLASPRC_JSON }}
+      SCRIPT_ID: ${{ secrets.LEITOR_SCRIPT_ID }}
+      DEPLOY_ID: ${{ secrets.LEITOR_DEPLOY_ID }}
+      GEMINI_CHAVE: ${{ secrets.GEMINI_CHAVE }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Conferir os segredos
+        id: ok
+        run: |
+          if [ -z "$CLASPRC" ] || [ -z "$SCRIPT_ID" ] || [ -z "$GEMINI_CHAVE" ]; then
+            echo "Faltam segredos (CLASPRC_JSON, LEITOR_SCRIPT_ID ou GEMINI_CHAVE). Nada publicado."
+            echo "pronto=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "pronto=1" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v7
+        if: steps.ok.outputs.pronto == '1'
+        with:
+          node-version: 22
+      - name: Enviar e publicar no Apps Script
+        if: steps.ok.outputs.pronto == '1'
+        run: |
+          npm install -g @google/clasp@2.4.2
+          printf '%s' "$CLASPRC" > ~/.clasprc.json
+          cd leitor
+          printf '{"scriptId":"%s","rootDir":"."}' "$SCRIPT_ID" > .clasp.json
+          # a chave entra num arquivo que só existe no Apps Script (não fica no repositório nem no site)
+          node -e 'require("fs").writeFileSync("Chave.gs", "const GEMINI_CHAVE = " + JSON.stringify(process.env.GEMINI_CHAVE.trim()) + ";\n")'
+          clasp push -f
+          if [ -n "$DEPLOY_ID" ]; then
+            clasp deploy -i "$DEPLOY_ID" -d "publicação ${GITHUB_SHA::7}"
+          else
+            clasp deploy -d "primeira publicação"
+            echo "Copie o ID da implantação acima (começa com AKfy) para o segredo LEITOR_DEPLOY_ID."
+          fi
+          rm -f Chave.gs ~/.clasprc.json

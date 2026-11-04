@@ -3514,9 +3514,9 @@ td { padding: 10px 6px; }
       const showKm = KM_CATS.includes(F.cat);
       return `
         <div><h2>${F.id ? "Editar lançamento" : "Novo lançamento"}</h2>${fInfo ? `<p class="note num" id="fInfo">${esc(fInfo)}</p>` : ""}${F.note ? `<p class="note">${esc(F.note)}</p>` : ""}</div>
-        ${S.canImg && !F.id ? `<label class="btn-print" for="printIn">${ICON.cam} Ler de um print ou cupom</label>
+        ${S.canImg && !F.id ? `<label class="btn-print" for="printIn">${ICON.cam} Ler de um print, cupom ou painel</label>
           <input type="file" id="printIn" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
-          <p class="hint" id="printMsg">${esc(F.printMsg || "Mande o print dos ganhos do app ou a foto do cupom. O Claude preenche e você confere.")}</p>` : ""}
+          <p class="hint" id="printMsg">${esc(F.printMsg || "Mande o print dos ganhos, a foto do cupom ou a do painel (antes de abastecer, com o carro ligado). O app preenche e você confere.")}</p>` : ""}
         <div class="seg"><button type="button" data-tipo="ganho" aria-pressed="${F.tipo === "ganho"}">Ganho</button><button type="button" data-tipo="gasto" aria-pressed="${F.tipo === "gasto"}">Gasto</button></div>
         <div class="chips">${(F.id && !F.trocaCat ? cats.filter((c) => c.n === F.cat) : cats).map((c) => `<button type="button" class="chip" data-cat="${esc(c.n)}" aria-pressed="${F.cat === c.n}">${esc(c.n)}</button>`).join("")}${F.id && !F.trocaCat ? `<button type="button" class="chip" id="trocaCat">Trocar categoria</button>` : ""}</div>
         ${variosCarros() ? `<div class="fld"><span>Carro</span><div class="chips">${carros().map((c) => `<button type="button" class="chip" data-lcar="${esc(c.id)}" aria-pressed="${F.carId === c.id}">${esc(nomeCarro(c))}</button>`).join("")}</div></div>` : ""}
@@ -3529,6 +3529,7 @@ td { padding: 10px 6px; }
         ${showKm ? `<div class="row2">${F.cat === "Combustível" ? `<label class="fld"><span>${F.comb === "GNV" ? "m³" : F.comb === "Elétrico" ? "kWh" : "Litros"}</span><input id="fLit" inputmode="decimal" placeholder="0,0" value="${esc(F.litros)}"></label>` : ""}
           <label class="fld"><span>KM no painel</span><input id="fKm" type="number" inputmode="numeric" placeholder="${kmAtual(F.carId) ? num(kmAtual(F.carId)) : "Ex.: 45900"}" value="${esc(F.km)}"></label></div>` : ""}
         ${F.cat === "Combustível" && !FORA.has(F.comb) ? `<label class="check"><input type="checkbox" id="fCheio"${F.cheio !== false ? " checked" : ""}><span>Enchi o tanque<br><small>Até o bico desligar. Sem encher, anote o KM mesmo assim.</small></span></label>` : ""}
+        ${F.cat === "Combustível" && F.ponteiro != null && F.ponteiro !== "" ? `<p class="hint" style="margin:0">Combustível antes de abastecer: ${oitavos(Number(F.ponteiro))} (foto do painel).</p>` : ""}
         ${HIST_CATS.includes(F.cat) && !F.id ? `<div class="fld"><span>Qual serviço?</span><div class="chips">${S.manut.filter((m) => cid(m) === F.carId).map((m) => `<button type="button" class="chip" data-serv-l="${esc(m.id)}" aria-pressed="${F.servId === m.id}">${esc(m.servico)}</button>`).join("")}</div>
           <small class="note" style="margin:0">Escolhendo o serviço, o app aprende quanto custa e de quanto em quanto tempo você faz.</small></div>
           <label class="check"><input type="checkbox" id="fHist"${F.hist !== false ? " checked" : ""}><span>Guardar no histórico do carro<br><small>Fica registrado com a data e o KM para mostrar na hora de vender.</small></span></label>` : ""}
@@ -3573,6 +3574,7 @@ td { padding: 10px 6px; }
         const kmN = intOrNull(F.km); if (kmN && KM_CATS.includes(F.cat)) doc.km = kmN;
         if (!kmConfere(ev.target, err, [doc.km], F.carId)) return;
         const lit = parseDec(F.litros); if (lit > 0 && F.cat === "Combustível") doc.litros = Math.round(lit * 100) / 100;
+        if (F.cat === "Combustível" && F.ponteiro != null && F.ponteiro !== "" && Number(F.ponteiro) >= 0 && Number(F.ponteiro) <= 1) doc.ponteiro = Number(F.ponteiro);
         if (F.cat === "Combustível") { if (F.comb) doc.comb = F.comb; doc.cheio = F.cheio !== false; if (String(F.posto || "").trim()) doc.posto = String(F.posto).trim().slice(0, 60); }
         const guardarHist = HIST_CATS.includes(F.cat) && !F.id && F.hist !== false;
         if (doc.tipo === "ganho" && doc.trabalho) {
@@ -3614,6 +3616,8 @@ td { padding: 10px 6px; }
     });
   }
 
+  // nível do ponteiro em texto: oitavos ("3/8"), "cheio" ou "vazio"
+  const oitavos = (p) => { const k = Math.round(p * 8); return k >= 8 ? "cheio" : k <= 0 ? "vazio" : k % 2 === 0 ? (k === 4 ? "1/2" : k / 2 + "/4") : k + "/8"; };
   async function lerPrint(file, F, draw, b) {
     const msg = b.querySelector("#printMsg");
     const label = b.querySelector(".btn-print");
@@ -3621,15 +3625,25 @@ td { padding: 10px 6px; }
     msg.textContent = "Lendo a imagem… isso leva alguns segundos.";
     const gan = CATS.filter((c) => c.t === "ganho").map((c) => c.n).join(", ");
     const gas = CATS.filter((c) => c.t === "gasto").map((c) => c.n).join(", ");
-    const prompt = `Você recebe uma imagem enviada por um motorista de aplicativo no Brasil. Pode ser um print da tela de ganhos de um app (Uber, 99, inDrive, iFood etc.) ou a foto de um cupom ou nota (posto de combustível, oficina, estacionamento, pedágio, lava-rápido).
+    const prompt = `Você recebe uma imagem enviada por um motorista de aplicativo no Brasil. Pode ser um print da tela de ganhos de um app (Uber, 99, inDrive, iFood etc.), a foto de um cupom ou nota (posto de combustível, oficina, estacionamento, pedágio, lava-rápido) ou a foto do painel do carro.
 Extraia os dados e responda só com um objeto JSON neste formato:
 {"tipo":"ganho" ou "gasto","categoria":"uma das categorias abaixo","valor":número em reais com ponto decimal,"data":"AAAA-MM-DD" ou null,"descricao":"texto curto","litros":número ou null,"combustivel":"Gasolina", "Etanol", "Diesel", "GNV" ou null,"posto":"nome do posto" ou null,"km":número ou null,"corridas":número inteiro ou null,"horas":número decimal ou null}
 Categorias de ganho: ${gan}.
 Categorias de gasto: ${gas}.
-Regras: num print de ganhos, use o total ganho no período mostrado (com gorjetas e promoções); "corridas" é o número de viagens ou entregas e "horas" é o tempo online, se aparecerem; "km" é a distância percorrida, se aparecer. Num cupom de combustível, use a categoria Combustível e preencha "litros" e "combustivel". Se a data não mostrar o ano, use ${today().slice(0, 4)}. Hoje é ${today()}. Se a imagem não for nada disso, responda {"erro":"não reconheci"}.`;
+Regras: num print de ganhos, use o total ganho no período mostrado (com gorjetas e promoções); "corridas" é o número de viagens ou entregas e "horas" é o tempo online, se aparecerem; "km" é a distância percorrida, se aparecer. Num cupom de combustível, use a categoria Combustível e preencha "litros" e "combustivel". Se a data não mostrar o ano, use ${today().slice(0, 4)}. Hoje é ${today()}. Se for a foto do painel do carro, responda só {"painel":true,"km":número do hodômetro total (não o parcial TRIP) ou null,"ponteiro":nível do combustível de 0 (vazio) a 1 (cheio) ou null}. No ponteiro de agulha, leia onde a agulha está entre E/vazio e F/cheio, em oitavos quando der (0,375 = 3/8). No marcador de barrinhas, use barrinhas acesas ÷ total. Não confunda com o ponteiro da temperatura nem com o conta-giros. Se a imagem não for nada disso, responda {"erro":"não reconheci"}.`;
     try {
       const r = await S.sample.json(prompt, { images: [file] });
-      if (!r || typeof r !== "object" || r.erro || !(Number(r.valor) > 0)) {
+      if (r && r.painel) {
+        // painel: só o KM e o ponteiro; o resto do lançamento (valor, litros) continua como está
+        const km = Number(r.km), pt = r.ponteiro == null || r.ponteiro === "" ? NaN : Number(r.ponteiro);
+        if (!(km > 0) && !(pt >= 0 && pt <= 1)) F.printMsg = "Não consegui ler o painel. Tente de novo com o carro ligado e a foto de frente.";
+        else {
+          F.tipo = "gasto"; F.cat = "Combustível"; if (!F.comb) F.comb = combPadrao(F.carId);
+          if (km > 0) F.km = String(Math.round(km));
+          if (pt >= 0 && pt <= 1) F.ponteiro = Math.round(pt * 1000) / 1000;
+          F.printMsg = "Painel lido" + (km > 0 ? ": KM " + num(km) : "") + (pt >= 0 && pt <= 1 ? (km > 0 ? ", " : ": ") + "combustível em " + oitavos(pt) : "") + ". Agora o valor e os litros, ou a foto do cupom.";
+        }
+      } else if (!r || typeof r !== "object" || r.erro || !(Number(r.valor) > 0)) {
         F.printMsg = "Não encontrei um valor nessa imagem. Preencha à mão ou tente outro print.";
       } else {
         F.tipo = r.tipo === "gasto" ? "gasto" : "ganho";

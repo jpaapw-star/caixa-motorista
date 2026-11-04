@@ -1258,3 +1258,30 @@ test("ponteiro lido antes de abastecer corrige o nível do tanque pela curva apr
   expect(comPt).toBeLessThan(12);
   await p2.close();
 });
+
+test("foto do painel preenche o KM e guarda o ponteiro antes de abastecer", async ({ page }) => {
+  await page.route("**/config.js", (r) => r.fulfill({ contentType: "application/javascript", body: 'window.CAIXA_CONFIG = { leitorUrl: "https://script.google.com/macros/s/TESTE/exec" };' }));
+  let pedido = null;
+  await page.route("https://script.google.com/**", (r) => {
+    pedido = JSON.parse(r.request().postData());
+    r.fulfill({ contentType: "application/json", body: JSON.stringify({ resposta: { painel: true, km: 52340, ponteiro: 0.375 } }) });
+  });
+  await abrir(page, dados());
+  await page.click("#fab");
+  // PNG 1×1 como "foto"
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+  await page.setInputFiles("#printIn", { name: "painel.png", mimeType: "image/png", buffer: png });
+  await expect(page.locator("#printMsg")).toContainText("KM 52.340");
+  await expect(page.locator("#printMsg")).toContainText("3/8");
+  expect(pedido.prompt).toContain("painel");
+  expect(pedido.fotos.length).toBe(1);
+  await expect(page.locator("#fKm")).toHaveValue("52340");
+  await page.fill("#fValor", "150");
+  await page.fill("#fLit", "25");
+  await page.click("#fSave");
+  await expect(page.locator("#sheet")).toBeHidden();
+  const loja = await lerLoja(page);
+  const ab = Object.values(loja).find((x) => x && x.cat === "Combustível");
+  expect(ab.ponteiro).toBe(0.375);
+  expect(ab.km).toBe(52340);
+});
