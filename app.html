@@ -229,6 +229,14 @@ button { cursor: pointer; }
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* resumo */
+.mix-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--fill, var(--line)); }
+.mix-bar i { display: block; height: 100%; }
+.mix-bar .g { background: var(--ink); }
+.mix-bar .e { background: var(--muted); }
+.mix-bar .x { background: var(--line); }
+.mix-leg { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.mix-leg b { font: 700 22px/1.1 var(--f-disp); }
+.tanque-baixa .mix-leg b { color: var(--muted); }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 12px; min-width: 0; }
 .chart text { font: 11px var(--f-body); fill: var(--muted); }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
@@ -961,6 +969,32 @@ td { padding: 10px 6px; }
   let trabAberto = false;
   try { trabAberto = localStorage.getItem(TRAB_ABERTO) === "1"; } catch (e) { /* sem armazenamento */ }
 
+  // Mistura atual do tanque e a melhor opção para economizar (só para quem usa gasolina e etanol)
+  function tanqueHTML(car = carAtivo()) {
+    const fd = fuelData(car.id), usados = new Set(fd.all.map((f) => f.comb).filter(Boolean));
+    const flex = !car.combustivel || car.combustivel === "Flex";
+    if (!flex || !(usados.has("Gasolina") || usados.has("Etanol"))) return "";
+    const ec = economia(car);
+    const ecTxt = ec ? economiaHTML(ec) : "";
+    const t = tanqueAgora(car);
+    const head = `<div class="split"><span class="label">Mistura atual do tanque</span>${t ? `<small>confiança ${t.conf}</small>` : ""}</div>`;
+    if (!t) {
+      const msg = !(Number(car.tanque) > 0) ? "Informe o tamanho do tanque em Editar carro para o app acompanhar a mistura." : "Estimativa de mistura ainda não confiável: anote o KM no próximo abastecimento.";
+      return `<div class="card">${head}<p class="note" style="margin:0">${msg}</p>${ecTxt}</div>`;
+    }
+    const G = t.porComb.Gasolina || 0, E = t.porComb.Etanol || 0, O = Math.max(0, t.litros - G - E), tot = t.litros || 1;
+    // porcentagens inteiras (a medida não tem precisão para casas decimais), somando 100
+    const pg = Math.round((G / tot) * 100), pe = t.litros > 0 ? Math.max(0, 100 - pg - Math.round((O / tot) * 100)) : 0;
+    const baixa = t.conf === "baixa";
+    const quando = `${t.origem === "tanque cheio" ? "Tanque cheio" : t.origem === "abastecimento" ? "Abastecimento" : "Gasto pelos km"} em ${dBR(t.data).slice(0, 5)}${t.rodou > 0 ? `, menos ${num(t.rodou)} km rodados` : ""}`;
+    return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
+      <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%"><i class="g" style="width:${(G / tot) * 100}%"></i><i class="e" style="width:${(E / tot) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / tot) * 100}%"></i>` : ""}</div>
+      <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:right"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span></div>
+      <small class="num" style="color:var(--muted)">${num(t.litros, 0)} L estimados de ${num(t.T)} L · ${quando}</small>
+      ${baixa ? `<p class="note" style="margin:0">Estimativa de mistura ainda não confiável: ${esc(t.motivos.join("; ") || "poucos dados")}.</p>` : t.conf === "média" && t.motivos.length ? `<p class="note" style="margin:0">Aproximação: ${esc(t.motivos.join("; "))}.</p>` : ""}
+      ${ecTxt}
+    </div>`;
+  }
   function renderInicio() {
     const s = stats(S.ym);
     const km = kmAtual();
@@ -977,6 +1011,13 @@ td { padding: 10px 6px; }
     const bk = avisoBackup();
     if (bk) alertas.push(bk);
     carros().forEach((c) => {
+      // mais litros que o tanque: os litros ou o tamanho do tanque estão errados (a conta da mistura não passa do tanque)
+      if (Number(c.tanque) > 0) {
+        const lim = dStr(new Date(Date.now() - 120 * 864e5));
+        const ex = fuelData(c.id).all.filter((f) => f.excede && (f.data || "") >= lim).pop();
+        if (ex) alertas.push({ nome: "Confira um abastecimento" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify({ t: "lanc", id: ex.id }),
+          txt: `Em ${dBR(ex.data).slice(0, 5)} entraram ${num(ex.excede, 1)} L, mais que o tanque de ${num(c.tanque)} L. Confira os litros ou o tamanho do tanque em Editar carro.` });
+      }
       const sus = kmParaConferir(c.id);
       if (!sus.length) return;
       const { de, para, dd } = sus[sus.length - 1];
@@ -1019,6 +1060,7 @@ td { padding: 10px 6px; }
         ${trabAberto ? extras.join("") : ""}
       </div>
       ${extras.length ? `<button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver mais números do mês"}</button>` : ""}
+      ${tanqueHTML()}
       <div class="caixa">
         <div class="split"><span class="label">Para manter ${variosCarros() ? "os carros" : "o carro"}</span><button class="link-btn" data-goto="carro" data-sub="custos">Detalhes</button></div>
         ${rc.D > 0 ? `<div class="split"><b class="big num">${brl(rc.faltaHoje)}<small style="font:500 15px var(--f-body);color:var(--muted)"> para separar hoje</small></b></div>
@@ -1110,6 +1152,9 @@ td { padding: 10px 6px; }
     const percorre = (kmlDe) => {
       const all = base.map((x) => ({ ...x }));
       let prev = null, accL = 0, parc = [], ultV = null, mix = null, parada = null, nivel = null, ultKm = 0;
+      // inc: parte do tanque que já estava lá antes do primeiro abastecimento anotado (origem desconhecida);
+      // semRef: o volume no tanque não é conhecido (início sem tanque cheio, ou parcial sem KM), até o próximo tanque cheio
+      let inc = null, semRef = true;
       for (const f of all) {
         const L = Number(f.litros) || 0;
         f.preco = L > 0 ? f.valor / L : null;
@@ -1121,7 +1166,7 @@ td { padding: 10px 6px; }
             // quanto havia no tanque ao chegar no posto: o que tinha menos o que os km rodados gastaram
             const rodou = kmOk(f) && ultKm > 0 && f.km >= ultKm ? f.km - ultKm : null;
             const antesL = nivel != null && rodou != null && mix ? Math.max(0, nivel - rodou / kmlDe(mix)) : null;
-            parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false };
+            parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false, incAntes: inc, semRefAntes: semRef };
             if (kmOk(f)) ultKm = Number(f.km);
           }
           parada.add[f.comb] = (parada.add[f.comb] || 0) + L;
@@ -1137,6 +1182,12 @@ td { padding: 10px 6px; }
           for (const [c, l] of Object.entries(parada.add)) novo[c] = (novo[c] || 0) + l / ((parada.antes ? sobra : 0) + tot);
           mix = novo;
           nivel = parada.cheio ? T : parada.antes && !f._semNivel ? Math.min(T, sobra + tot) : null;
+          // o que sobrou de origem desconhecida se dilui a cada abastecimento
+          const sob = parada.antes ? sobra : cabe;
+          inc = sob + tot > 0 ? ((parada.antes ? parada.incAntes || 0 : 1) * sob) / (sob + tot) : 0;
+          semRef = parada.cheio ? false : !parada.antes || !!f._semNivel || parada.semRefAntes;
+          f.incApos = inc; f.semRef = semRef;
+          if (tot > T * 1.05) f.excede = tot; // mais litros que o tanque: tamanho do tanque ou litros errados
           f.nivelAntes = parada.antesL; f.nivelDepois = nivel; // litros no tanque ao chegar e ao sair do posto
         } else if (kmOk(f)) ultKm = Number(f.km);
         f.mixApos = mix;
@@ -1293,12 +1344,37 @@ td { padding: 10px 6px; }
       if (!kml && comb === "Etanol" && fd.kmlPor.Gasolina) { kml = fd.kmlPor.Gasolina * RAZAO_ETA; est = true; }
       if (!kml && comb === "Gasolina" && fd.kmlPor.Etanol) { kml = fd.kmlPor.Etanol / RAZAO_ETA; est = true; }
       const raw = precos[comb];
-      const p = raw != null && raw !== "" ? parseValor(raw) : fd.precoUlt[comb] || (usarAnp ? anpMedio(comb) : null) || null;
-      return { comb, kml, est, preco: p > 0 ? p : null, custoKm: p > 0 && kml ? p / kml : null, unid: comb === "GNV" ? "m³" : "L" };
+      const digitado = raw != null && raw !== "" ? parseValor(raw) : null;
+      const ultF = fd.all.filter((f) => f.comb === comb && f.litros > 0).pop();
+      const anp = usarAnp ? anpMedio(comb) : null;
+      const p = digitado || fd.precoUlt[comb] || anp || null;
+      // de onde veio o preço, para a tela dizer a data
+      const fonteP = digitado ? "digitado agora" : fd.precoUlt[comb] && ultF ? "pago em " + dBR(ultF.data).slice(0, 5) : anp && S.anp && S.anp.semana ? "média da ANP até " + dBR(S.anp.semana.fim).slice(0, 5) : "";
+      return { comb, kml, est, preco: p > 0 ? p : null, fonteP, custoKm: p > 0 && kml ? p / kml : null, unid: comb === "GNV" ? "m³" : "L" };
     });
     const validos = ops.filter((o) => o.custoKm).sort((a, b) => a.custoKm - b.custoKm);
     return { ops, validos, melhor: validos[0] || null, fd };
   }
+  // Melhor opção para economizar: custo por km de cada combustível (preço ÷ km/l do seu carro), a diferença em %
+  // e o preço de equilíbrio do etanol (gasolina × km/l do etanol ÷ km/l da gasolina). Como o custo de uma mistura
+  // fica sempre entre o dos dois, não existe mistura "ideal": compensa priorizar o que custa menos por km.
+  function economia(car, precos = S.cmp) {
+    const r = opcoesComb(car, precos), g = r.ops.find((o) => o.comb === "Gasolina"), e = r.ops.find((o) => o.comb === "Etanol");
+    if (!g || !e || !g.custoKm || !e.custoKm) return null;
+    const [b, o] = g.custoKm <= e.custoKm ? [g, e] : [e, g];
+    const dif = (o.custoKm - b.custoKm) / o.custoKm;
+    return { g, e, melhor: b, outro: o, dif, parecido: dif < 0.03, est: g.est || e.est, eqEta: g.preco * e.kml / g.kml };
+  }
+  function economiaHTML(ec) {
+    const d = (o) => (o.fonteP ? " (" + o.fonteP + ")" : "");
+    return `<div style="border-top:1px solid var(--line);padding-top:10px;display:grid;gap:4px">
+      <span class="label">Melhor opção para economizar</span>
+      <b>${ec.parecido ? "Os dois estão parecidos agora" : `Priorize ${ec.melhor.comb.toLowerCase()}: ${num(ec.dif * 100)}% mais barato por km`}</b>
+      <small class="num" style="color:var(--muted)">Gasolina ${brl(ec.g.custoKm)}/km${d(ec.g)} · Etanol ${brl(ec.e.custoKm)}/km${d(ec.e)}</small>
+      <small class="num" style="color:var(--muted)">O etanol compensa até ${brl(ec.eqEta)} o litro no seu carro.${ec.est ? " Ainda não é conclusivo: poucos tanques para separar as médias." : ""}</small>
+    </div>`;
+  }
+
   function calcOutHTML(car) {
     const r = opcoesComb(car), rk = ritmoKm(car.id);
     if (!r.validos.length) {
@@ -1315,7 +1391,8 @@ td { padding: 10px 6px; }
     const econ = outro && rk ? (outro.custoKm - b.custoKm) * rk.kmDia * 30.44 : null;
     return `<div class="cmp-out ${b.comb === "Etanol" ? "eta" : "gas"}"><span class="label">Coloque</span><b>${b.comb}</b>
         <span>${outro ? `Cada km sai ${brl(outro.custoKm - b.custoKm)} mais barato que com ${outro.comb.toLowerCase()}.` : `Cada km custa ${brl(b.custoKm)}.`}${econ > 1 ? ` No seu ritmo de ${num(rk.kmDia)} km por dia, são uns ${brl(econ)} a menos por mês.` : ""}</span></div>
-      <div class="bars">${r.validos.map((o, i) => `<div class="split"><span><b>${o.comb}</b>${i === 0 && r.validos.length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${num(o.kml, 1)} km/${o.unid}${o.est ? " (estimado)" : " no seu carro"}${car.tanque && o.unid === "L" ? ` · encher: ${brl(o.preco * car.tanque)}, rende ${num(o.kml * car.tanque)} km` : ""}</small></span><b class="num">${brl(o.custoKm)}/km</b></div>`).join("")}</div>
+      ${(() => { const ec = economia(car); return ec ? `<p class="note" style="margin:0">${ec.parecido ? "Os dois dão economia parecida agora (diferença menor que 3%)." : `${ec.melhor.comb} sai ${num(ec.dif * 100)}% mais barato por km.`} O etanol compensa até <b class="num">${brl(ec.eqEta)}</b> o litro, pelo consumo do seu carro.</p>` : ""; })()}
+      <div class="bars">${r.validos.map((o, i) => `<div class="split"><span><b>${o.comb}</b>${i === 0 && r.validos.length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${num(o.kml, 1)} km/${o.unid}${o.est ? " (estimado)" : " no seu carro"}${o.fonteP ? " · preço " + o.fonteP : ""}${car.tanque && o.unid === "L" ? ` · encher: ${brl(o.preco * car.tanque)}, rende ${num(o.kml * car.tanque)} km` : ""}</small></span><b class="num">${brl(o.custoKm)}/km</b></div>`).join("")}</div>
       ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Consumo estimado: com poucos tanques, o app parte da regra de que o etanol rende uns 73% da gasolina da bomba. A cada tanque cheio anotado com KM, o número fica mais perto do real.</p>` : ""}
       ${r.ops.some((o) => !o.custoKm && o.comb === "GNV") ? `<p class="note" style="margin:0">Para comparar o GNV, anote dois abastecimentos de GNV com KM (os m³ vão no campo de litros).</p>` : ""}`;
   }
@@ -1428,18 +1505,34 @@ td { padding: 10px 6px; }
   // Só com o tamanho do tanque informado.
   function tanqueAgora(car) {
     if (!(Number(car.tanque) > 0)) return null;
-    const fd = fuelData(car.id), fills = fd.all.filter((f) => f.litros > 0 && f.comb);
+    const T = Number(car.tanque), fd = fuelData(car.id), fills = fd.all.filter((f) => f.litros > 0 && f.comb);
     const ult = fills[fills.length - 1];
-    if (!ult || ult.nivelDepois == null || !(ult.km > 0) || !ult.mixApos) return null;
+    if (!ult || ult.nivelDepois == null || !ult.mixApos) return null;
     const mix = ult.mixApos, kmlDe = Object.entries(mix).reduce((a, [c, v]) => a + v * (fd.kmlPor[c] || fd.media || 0), 0);
-    if (!(kmlDe > 0)) return null;
-    const rodou = Math.max(0, kmAtual(car.id) - Number(ult.km));
-    const litros = Math.max(0, ult.nivelDepois - rodou / kmlDe);
+    // gasto desde o último abastecimento: só com KM nele e consumo conhecido; sem isso, o nível fica o do posto e a confiança cai
+    const temKm = ult.km > 0 && kmlDe > 0;
+    const rodou = temKm ? Math.max(0, kmAtual(car.id) - Number(ult.km)) : 0;
+    const litros = Math.min(T, Math.max(0, ult.nivelDepois - (temKm ? rodou / kmlDe : 0)));
+    const porComb = Object.fromEntries(Object.entries(mix).filter(([, v]) => v > 0.001).map(([c, v]) => [c, litros * v]));
     const preco = Object.entries(mix).reduce((a, [c, v]) => a + v * (fd.precoUlt[c] || fd.precoMedio || 0), 0);
     const rec = fills.slice(-10), niv = [...rec.map((f) => f.nivelAntes), ...rec.map((f) => f.nivelDepois)].filter((v) => v != null);
     const medio = niv.length >= 4 ? niv.reduce((a, b) => a + b, 0) / niv.length : null;
-    return { litros, valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
+    // confiança da mistura: a referência (tanque cheio depois do início), quanto ainda é de origem desconhecida,
+    // se deu para calcular o gasto pelos km e se as médias de cada combustível já são firmes
+    const inc = ult.incApos || 0, combs = Object.keys(porComb).filter((c) => mix[c] >= 0.1);
+    const mediaFraca = combs.some((c) => !fd.kmlConf[c] || fd.kmlConf[c] === "baixa") && combs.length > 1;
+    const motivos = [];
+    if (ult.semRef) motivos.push("ainda sem um tanque cheio depois de um parcial sem KM");
+    if (inc > 0.05) motivos.push(num(inc * 100) + "% do tanque já estava lá antes do primeiro registro");
+    if (!ult.km) motivos.push("o último abastecimento não tem KM");
+    const consumoFraco = mediaFraca && rodou > 0;
+    if (consumoFraco) motivos.push("o gasto desde o último abastecimento usa médias ainda com confiança baixa");
+    const conf = ult.semRef || inc > 0.2 || !ult.km ? "baixa" : inc > 0.05 || consumoFraco ? "média" : "alta";
+    const origem = rodou > 0 ? "estimativa de consumo" : ult.cheio !== false ? "tanque cheio" : "abastecimento";
+    return { litros, porComb, T, inc, conf, motivos, origem, data: ult.data, kmRef: Number(ult.km) || null, rodou,
+      valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
   }
+
   // Previsão do combustível do mês:
   //   gasto até hoje + custo dos km que faltam (pelos dias que você costuma rodar)
   //   − o combustível que já está no tanque (já foi pago) + o que costuma sobrar no tanque no fim do mês.
@@ -2482,6 +2575,11 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 9, data: "2026-11-04", itens: [
+      "Novo no Início: a mistura atual do tanque, com quanto há de gasolina e de etanol, os litros estimados e a confiança da estimativa.",
+      "Melhor opção para economizar: qual combustível sai mais barato por km no seu carro, quanto por cento, e até que preço o etanol compensa.",
+      "Abastecimento com mais litros que o tanque vira aviso para conferir.",
+    ] },
     { v: 8, data: "2026-11-04", itens: [
       "Previsão do combustível do mês desconta o que já está no tanque (já foi pago) e conta quanto você roda em cada dia da semana, pelos seus ganhos ou pelo KM do dia. Com algumas semanas de registros, mostra também uma faixa (entre quanto e quanto).",
       "Tela de consumo organizada em pares: médias, último tanque e preço por km.",
