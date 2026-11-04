@@ -88,6 +88,11 @@ button { cursor: pointer; }
 .placa-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
 .placa-row span { display: flex; align-items: center; gap: 6px; }
 .placa-row svg { width: 14px; height: 14px; }
+.placa-prev { font-size: 14px; color: rgb(255 255 255 / .75); margin-top: 2px; }
+.kv3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 4px; }
+.kv3 span { display: grid; gap: 2px; }
+.kv3 small { color: var(--muted); font-size: 13px; }
+.kv3 b { font: 700 22px/1.1 var(--f-disp); letter-spacing: -.02em; }
 
 /* jornada */
 .jornada { display: grid; gap: 8px; }
@@ -189,7 +194,7 @@ button { cursor: pointer; }
 .frow .fk { display: grid; justify-items: end; line-height: 1; gap: 3px; min-width: 46px; }
 .frow .fk b { font: 600 22px/1 var(--f-disp); }
 .frow .fk small { color: var(--muted); font-size: 11px; }
-.chart .vlab { fill: var(--ink); font-weight: 600; }
+.chart .vlab { fill: var(--ink); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .legend .dash { display: inline-block; width: 14px; border-top: 2px dashed var(--ink); margin-right: 6px; vertical-align: 3px; }
 .cmp-out { border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; font-size: 14px; border-left: 4px solid var(--gas); background: var(--bg); }
 .cmp-out.eta { border-left-color: var(--eta); }
@@ -391,6 +396,18 @@ body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 .day-h .meta button { border: 0; background: var(--fill); border-radius: 999px; padding: 3px 10px; }
 .caixa > .split:first-child .label { text-transform: none; letter-spacing: -.01em; font: 700 18px/1.2 var(--f-disp); color: var(--ink); }
 td { padding: 10px 6px; }
+/* alvos de toque maiores (setas do mês, chips) */
+.icon-btn { width: 40px; height: 40px; }
+.chip { padding: 9px 14px; min-height: 38px; }
+/* campo de valor sem caixa dentro de caixa */
+.fld .money input { background: transparent; padding: 6px 0; border-radius: 0; }
+/* avisos: texto em bloco, sem a faixa na lateral */
+.alert, .alert.venc { border-left: 0; }
+.alert span { display: block; line-height: 1.35; margin-top: 2px; }
+/* folha com alça; no escuro ela se destaca do fundo */
+.sheet-panel::before { content: ""; justify-self: center; width: 36px; height: 5px; border-radius: 3px; background: var(--line); margin: -8px 0 -6px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sheet-panel { background: var(--surface); } }
+:root[data-theme="dark"] .sheet-panel { background: var(--surface); }
 @media (max-width: 380px) { .lucro { font-size: 40px; } .month b { min-width: 96px; } .brand { font-size: 17px; } }
 </style>
 
@@ -1052,6 +1069,59 @@ td { padding: 10px 6px; }
       ${ecTxt}
     </div>`;
   }
+  // Quanto cada km te dá e quanto custa: ganhos dos últimos 90 dias ÷ km rodados no mesmo período (pelas anotações
+  // de KM), contra o custo por km do carro (combustível, manutenção, fixos e desvalorização). Precisa de 30 dias de registro.
+  function kmValor() {
+    const prim = S.lanc.map((x) => x.data).filter(Boolean).sort()[0], lim30 = dStr(new Date(Date.now() - 30 * 864e5));
+    if (!prim || prim > lim30) return null;
+    const lim = dStr(new Date(Date.now() - 90 * 864e5)), ini = prim > lim ? prim : lim, fim = diaSeguinte(today());
+    let km = 0, custo = 0;
+    for (const car of carros()) {
+      const k = kmEntre(car.id, ini, fim);
+      if (!(k > 0)) continue;
+      const cr = custoReal(car);
+      if (!(cr.total > 0)) return null;
+      km += k; custo += cr.total * k;
+    }
+    const ganhos = sum(S.lanc.filter((x) => x.tipo === "ganho" && (x.data || "") >= ini && x.data <= today()));
+    if (!(km > 100) || !(ganhos > 0)) return null;
+    return { da: ganhos / km, cu: custo / km, sobra: (ganhos - custo) / km };
+  }
+  // Lucro previsto do mês: o lucro até hoje + (ganho médio por dia − gastos do dia a dia por dia) nas últimas 8 semanas
+  // × dias que faltam − o combustível que ainda falta (pela previsão do combustível). Gastos que não se repetem todo
+  // mês (manutenção, pneus, seguro, IPVA, multa, parcela) entram só quando acontecem.
+  function lucroPrevisto(s, pc) {
+    const h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate();
+    const hj = today(), ini = dStr(new Date(Date.now() - 56 * 864e5));
+    const prim = S.lanc.map((x) => x.data).filter(Boolean).sort()[0];
+    if (h.getDate() < 5 || !prim || prim > ini) return null;
+    const dr = N - h.getDate() + (S.lanc.some((x) => x.tipo === "ganho" && x.data === hj) ? 0 : 1);
+    if (dr < 1) return null;
+    const irreg = new Set(["Combustível", "Manutenção", "Peças / pneus", "Seguro", "IPVA / licenciamento", "Multa", "Parcela / aluguel do carro"]);
+    const L = S.lanc.filter((x) => (x.data || "") >= ini && x.data < hj);
+    const ganhoDia = sum(L.filter((x) => x.tipo === "ganho")) / 56, outrosDia = sum(L.filter((x) => x.tipo === "gasto" && !irreg.has(x.cat))) / 56;
+    const combFalta = pc ? Math.max(0, pc.valor - s.comb) : (sum(L.filter((x) => x.cat === "Combustível")) / 56) * dr;
+    return s.saldo + (ganhoDia - outrosDia) * dr - combFalta;
+  }
+  // Ganho em cada dia da semana, por dia trabalhado (dia com ganho), nas últimas 12 semanas
+  const DSEM = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+  function diasDaSemana() {
+    const ini = dStr(new Date(Date.now() - 84 * 864e5)), por = {};
+    S.lanc.filter((x) => x.tipo === "ganho" && (x.data || "") >= ini && x.data <= today()).forEach((x) => { por[x.data] = (por[x.data] || 0) + (Number(x.valor) || 0); });
+    const w = Array.from({ length: 7 }, () => ({ s: 0, n: 0 }));
+    Object.entries(por).forEach(([d, v]) => { if (v > 0) { const k = new Date(d + "T12:00").getDay(); w[k].s += v; w[k].n++; } });
+    const ok = [1, 2, 3, 4, 5, 6, 0].map((i) => ({ i, n: w[i].n, m: w[i].n ? w[i].s / w[i].n : 0 })).filter((x) => x.n >= 3);
+    return ok.length >= 3 ? ok : null;
+  }
+  function diasSemanaHTML() {
+    const ds = diasDaSemana();
+    if (!ds) return "";
+    const ord = ds.slice().sort((a, b) => b.m - a.m), mel = ord[0], pio = ord[ord.length - 1], top = mel.m;
+    return `<div class="card"><div class="sec-h"><h2>Dias da semana</h2></div>
+      <p class="note" style="margin:0"><b style="color:var(--ink)">${DSEM[mel.i]} rende mais: ${brl(mel.m)}</b> por dia trabalhado. ${DSEM[pio.i]} rende menos: ${brl(pio.m)}.</p>
+      <div class="bars">${ds.map((x) => `<div class="bar-row"><span>${DSEM[x.i]}</span><span class="num">${brl(x.m)}</span><div class="track"><i style="width:${(x.m / top) * 100}%;background:var(--ganho)"></i></div></div>`).join("")}</div>
+      <small style="color:var(--muted)">Média de cada dia trabalhado nas últimas 12 semanas.</small></div>`;
+  }
   function renderInicio() {
     const s = stats(S.ym);
     const km = kmAtual();
@@ -1075,6 +1145,19 @@ td { padding: 10px 6px; }
         if (ex) alertas.push({ nome: "Confira um abastecimento" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify({ t: "lanc", id: ex.id }),
           txt: `Em ${dBR(ex.data).slice(0, 5)} entraram ${num(ex.excede, 1)} L, mais que o tanque de ${num(c.tanque)} L. Confira os litros ou o tamanho do tanque em Editar carro.` });
       }
+      // o combustível que sai mais barato por km mudou: avisa por 3 dias (a primeira vez só guarda)
+      const ec = !loading && S.loaded.s && ehFlex(c.combustivel) ? economia(c, {}) : null;
+      if (ec && !ec.parecido && !ec.est) {
+        const todos = S.settings.melhorComb || {}, mc = todos[c.id], agora = ec.melhor.comb;
+        if (!mc || mc.comb !== agora) {
+          const novo = { ...todos, [c.id]: { comb: agora, desde: today(), antes: mc ? mc.comb : null } };
+          S.settings.melhorComb = novo;
+          setTimeout(() => saveSettings({ melhorComb: novo }).catch(() => {}), 0);
+        }
+        const m2 = S.settings.melhorComb[c.id], dias = (new Date(today() + "T12:00") - new Date(m2.desde + "T12:00")) / 864e5;
+        if (m2.antes && dias <= 3) alertas.push({ nome: `Agora o ${agora.toLowerCase()} compensa` + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Ver", tab: "carro", sub: "consumo", car: c.id,
+          txt: `Com os preços de agora, sai ${num(ec.dif * 100)}% mais barato por km que ${ec.outro.comb === "Gasolina" ? "a gasolina" : "o etanol"}. O etanol compensa até ${brl(ec.eqEta)} o litro.` });
+      }
       const rq = rendimentoCaiu(c);
       if (rq) alertas.push({ nome: "Rendimento caiu" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Ver", tab: "carro", sub: "consumo", car: c.id,
         txt: `O tanque de ${dBR(rq.data).slice(0, 5)} fez ${num(rq.kml, 1)} km/l, ${num(rq.queda * 100)}% abaixo do normal (${num(rq.esp, 1)}). Confira a calibragem dos pneus${rq.posto ? " e o combustível do " + rq.posto : " e o combustível"}.` });
@@ -1085,17 +1168,19 @@ td { padding: 10px 6px; }
       alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
         txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. O ${num(para.k)} está ${src.onde || "nos seus registros"} e fica fora das contas até você corrigir.` });
     });
-    const { lucroDia, perKm } = s;
+    const { lucroDia } = s;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
     // números extras do mês: só os que já têm valor (nada de quadro com "—")
     const tile = (label, v) => v == null ? null : `<div><span class="label">${label}</span><span class="v">${v}</span></div>`;
     const extras = [
       tile("Lucro por dia", lucroDia == null ? null : brl(lucroDia)),
-      tile("Ganho por km", perKm == null ? null : brl(perKm)),
       tile("Por corrida", s.porCorrida == null ? null : brl(s.porCorrida)),
       tile("Km rodados vazio", s.vazioPct == null ? null : num(s.vazioPct * 100) + " <small>%</small>"),
       tile("Ganho por km c/ passageiro", s.kmPass > 0 ? brl(s.trabPass / s.kmPass) : null),
     ].filter(Boolean);
+    const atualMes = S.ym === ymNow(), pcMes = atualMes ? previsaoComb(s.comb) : null;
+    const lp = atualMes && !loading ? lucroPrevisto(s, pcMes) : null;
+    const kv = kmValor();
     const resumoTrab = s.dias ? `<small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"}${s.corridas ? " · " + num(s.corridas) + " corridas" : ""}</small>` : "";
 
     $("#tab-inicio").innerHTML = `
@@ -1103,6 +1188,7 @@ td { padding: 10px 6px; }
         <div class="placa-top"><span class="label">Lucro em ${mes}</span></div>
         <div class="lucro num${loading ? "" : s.saldo < 0 ? " neg" : s.saldo > 0 ? " pos" : ""}">${loading ? "…" : brl(s.saldo)}</div>
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
+        ${lp != null ? `<div class="placa-prev num">Se continuar assim, fecha ${mes} com ~${brl(Math.round(lp / 10) * 10)}</div>` : ""}
       </div></div>
       ${jornadaHTML()}
       ${hoje.ganhos > 0 || hoje.D.length ? `<div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>` : ""}
@@ -1110,16 +1196,21 @@ td { padding: 10px 6px; }
       <div class="metrics">
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
-          const atual = S.ym === ymNow(), pc = atual ? previsaoComb(s.comb) : null, prev = pc ? pc.valor : null;
+          const atual = atualMes, pc = pcMes, prev = pc ? pc.valor : null;
           if (pc && !loading) guardarPrevisao(pc, s.comb);
           const cm = {}; s.L.filter((x) => x.cat === "Combustível").forEach((x) => { const c = x.comb || "Outro"; cm[c] = (cm[c] || 0) + (Number(x.valor) || 0); });
           const combMes = Object.entries(cm).sort((a, b) => b[1] - a[1]);
-          return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : ""}</span></button>
+          // todo o gasto do mês é combustível: o total já está no destaque, aqui vai a média por dia
+          const soComb = s.comb > 0 && Math.abs(s.comb - s.gastos) < 0.01, dd = atual ? new Date().getDate() : N;
+          return `<button class="tile" data-calc="1"><span class="label">${soComb ? "Combustível por dia" : "Combustível no mês"}&nbsp;›</span><span class="v">${brl(soComb ? s.comb / dd : s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : ""}</span></button>
           <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? dicaPrev(pc, cm) : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
         ${trabAberto ? extras.join("") : ""}
       </div>
       ${extras.length ? `<button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver mais números do mês"}</button>` : ""}
+      ${kv ? `<div class="card"><span class="label">Cada km rodado</span>
+        <div class="kv3 num"><span><small>te dá</small><b>${brl(kv.da)}</b></span><span><small>custa</small><b>${brl(kv.cu)}</b></span><span><small>sobra</small><b class="${kv.sobra >= 0 ? "txt-g" : "txt-x"}">${brl(kv.sobra)}</b></span></div>
+        <p class="note" style="margin:0">Corrida que paga menos de ${brl(kv.cu)} por km dá prejuízo.</p></div>` : ""}
       ${tanqueHTML()}
       <div class="caixa">
         <div class="split"><span class="label">Para manter ${variosCarros() ? "os carros" : "o carro"}</span><button class="link-btn" data-goto="carro" data-sub="custos">Detalhes</button></div>
@@ -1608,8 +1699,7 @@ td { padding: 10px 6px; }
     return `<div style="border-top:1px solid var(--line);padding-top:10px;display:grid;gap:4px">
       <span class="label">Melhor opção para economizar</span>
       <b>${ec.parecido ? "Os dois estão parecidos agora" : `Priorize ${ec.melhor.comb.toLowerCase()}: ${num(ec.dif * 100)}% mais barato por km`}</b>
-      <small class="num" style="color:var(--muted)">Gasolina ${brl(ec.g.custoKm)}/km${d(ec.g)} · Etanol ${brl(ec.e.custoKm)}/km${d(ec.e)}${mesma && ec.g.fonteP ? " · preços " + ec.g.fonteP : ""}</small>
-      <small class="num" style="color:var(--muted)">O etanol compensa até ${brl(ec.eqEta)} o litro no seu carro.${ec.est ? " Ainda incerto: poucos tanques." : ""}</small>
+      <small class="num" style="color:var(--muted)">O etanol compensa até ${brl(ec.eqEta)} o litro no seu carro${mesma && ec.g.fonteP ? ", com os preços " + ec.g.fonteP : ""}.${ec.est ? " Ainda incerto: poucos tanques." : ""}</small>
     </div>`;
   }
 
@@ -1637,7 +1727,7 @@ td { padding: 10px 6px; }
   function calcHTML(car) {
     const r = opcoesComb(car);
     return `<div class="calc" data-calccar="${esc(car.id)}">
-      <div class="calc-in">${r.ops.map((o) => { const cid = !r.fd.precoUlt[o.comb] && anpMedio(o.comb); return `<label class="fld"><span>${o.comb} (R$/${o.unid})${S.cmp[o.comb] == null && cid ? " · média da cidade" : ""}</span><input data-pc="${esc(o.comb)}" inputmode="decimal" placeholder="Preço no posto" value="${esc(S.cmp[o.comb] ?? (r.fd.precoUlt[o.comb] ? num(r.fd.precoUlt[o.comb], 2) : cid ? num(cid, 2) : ""))}"></label>`; }).join("")}</div>
+      <div class="calc-in">${r.ops.map((o) => { const cid = !r.fd.precoUlt[o.comb] && anpMedio(o.comb); return `<label class="fld"><span>${o.comb} (R$/${o.unid})${S.cmp[o.comb] == null && cid ? " · média da cidade" : ""}</span><input data-pc="${esc(o.comb)}" inputmode="decimal" placeholder="0,00" value="${esc(S.cmp[o.comb] ?? (r.fd.precoUlt[o.comb] ? num(r.fd.precoUlt[o.comb], 2) : cid ? num(cid, 2) : ""))}"></label>`; }).join("")}</div>
       <div class="calc-out">${calcOutHTML(car)}</div></div>`;
   }
   function sepForm(x = null) {
@@ -1759,15 +1849,21 @@ td { padding: 10px 6px; }
   // (fração × km/l de cada combustível; sem as duas médias, a mediana dos 5 tanques anteriores).
   // Precisa de 4 tanques com mistura conhecida.
   function rendimentoCaiu(car) {
-    const fd = fuelData(car.id), tr = fd.trechos.filter((f) => f.mix && !f.mixIncerto);
+    // trechos com GNV ou bateria ficam de fora: o que sobra no cilindro ou na bateria mexe demais no km/l do líquido
+    const fd = fuelData(car.id), tr = fd.trechos.filter((f) => f.mix && !f.mixIncerto && !(f.foraKm > 0.05));
     if (tr.length < 4) return null;
     const u = tr[tr.length - 1];
     if (u.data < dStr(new Date(Date.now() - 30 * 864e5))) return null;
     const temTodas = Object.keys(u.mix).every((c) => fd.kmlPor[c]);
-    let esp = temTodas ? Object.entries(u.mix).reduce((a, [c, v]) => a + v * fd.kmlPor[c], 0) : null;
+    const espDe = (f) => Object.entries(f.mix).reduce((a, [c, v]) => a + v * fd.kmlPor[c], 0);
+    let esp = temTodas ? espDe(u) : null;
     if (!(esp > 0)) { const ant = tr.slice(-6, -1).map((f) => f.kml).sort((a, b) => a - b); esp = ant[ant.length >> 1]; }
     const queda = 1 - u.kml / esp;
     if (!(queda >= 0.1)) return null;
+    // o tanque anterior rendeu bem acima do normal: o "Enchi o tanque" de antes não encheu, e os litros que faltaram
+    // entraram neste. Não é o carro gastando mais
+    const pr = tr[tr.length - 2];
+    if (pr && Number(pr.km) === Number(u.kmIni) && Object.keys(pr.mix).every((c) => fd.kmlPor[c]) && pr.kml / espDe(pr) - 1 >= 0.08) return null;
     const ini = fd.all.filter((f) => Number(f.km) === Number(u.kmIni) && f.litros > 0).pop();
     return { queda, kml: u.kml, esp, data: u.data, posto: ini && ini.posto ? String(ini.posto).trim() : null, id: u.id };
   }
@@ -2161,7 +2257,7 @@ td { padding: 10px 6px; }
       }
       if (sem.length >= 4) {
         const m = sem.reduce((a, b) => a + b, 0) / sem.length, dp = Math.sqrt(sem.reduce((a, b) => a + (b - m) ** 2, 0) / (sem.length - 1));
-        const ckm = pc.dia / (m / 7 || 1); // custo por km deste carro
+        const ckm = pc.ck ? pc.ck.v : pc.dia / (m / 7 || 1); // custo por km deste carro
         sd2 += (ckm * k * dp) ** 2 * (dr / 7);
       }
     }
@@ -2268,7 +2364,11 @@ td { padding: 10px 6px; }
     if (fd.media) svg += `<line x1="${pL}" x2="${W - pR}" y1="${y(fd.media)}" y2="${y(fd.media)}" stroke="var(--ink)" stroke-width="1.2" stroke-dasharray="4 4"/>`;
     last.forEach((f, i) => {
       const cx = pL + gw * i + gw / 2;
-      svg += `<rect x="${cx - bw / 2}" y="${y(f.kml)}" width="${bw}" height="${Math.max(0, pT + ph - y(f.kml))}" rx="3" fill="${f.combTrecho === "Etanol" ? "var(--eta)" : "var(--gas)"}"/>`;
+      // a barra mostra o que o carro queimou no trecho: a parte de gasolina embaixo e a de etanol em cima
+      const hT = Math.max(0, pT + ph - y(f.kml)), m = f.mix || {}, sm = Object.values(m).reduce((a, b) => a + b, 0) || 1;
+      const fe = f.combTrecho === "Etanol" ? 1 : f.combTrecho ? 0 : (m.Etanol || 0) / sm, hE = hT * fe;
+      svg += `<rect x="${cx - bw / 2}" y="${y(f.kml)}" width="${bw}" height="${hT}" rx="3" fill="var(--gas)"/>`;
+      if (hE > 0.5) svg += `<rect x="${cx - bw / 2}" y="${y(f.kml)}" width="${bw}" height="${hE}" rx="${hE < hT - 0.5 ? 0 : 3}" fill="var(--eta)"/>`;
       svg += `<text class="vlab" x="${cx}" y="${y(f.kml) - 5}" text-anchor="middle">${num(f.kml, 1)}</text>`;
       svg += `<text x="${cx}" y="${H - 7}" text-anchor="middle">${dBR(f.data).slice(0, 5)}</text>`;
     });
@@ -2296,13 +2396,13 @@ td { padding: 10px 6px; }
       : `<div class="ficha"><div class="ficha-txt"><b class="car-nome">Cadastre seu carro</b><span class="car-info">Escolha marca, modelo e ano e o app preenche o resto.</span></div>
           <div class="btn-row"><button class="btn sm primary" id="editCar"${off}>Cadastrar</button>${variosCarros() ? "" : addCar}</div>
           ${kmHTML}</div>`;
-    const seg = `<div class="seg seg4">${[["consumo", "Consumo"], ["custos", "Custos"], ["manut", "Manutenção"], ["docs", "Documentos"]].map(([k, l]) => `<button type="button" data-csub="${k}" aria-pressed="${sub === k}">${l}</button>`).join("")}</div>`;
+    const seg = `<div class="seg seg4">${[["consumo", "Consumo"], ["custos", "Custos"], ["manut", "Manutenção"], ["docs", "Docs"]].map(([k, l]) => `<button type="button" data-csub="${k}" aria-pressed="${sub === k}">${l}</button>`).join("")}</div>`;
     let pane = "";
     if (sub === "consumo") {
       const lst = fd.all.slice().reverse();
       const pr = postosRank();
       const prCombs = Object.keys(pr);
-      const abastHTML = `<div class="sec-h"><h2>Abastecimentos</h2><button class="btn sm ghost" id="addAbast3"${off}>+ Abastecer</button></div>
+      const abastHTML = !lst.length ? "" : `<div class="sec-h"><h2>Abastecimentos</h2><button class="btn sm ghost" id="addAbast3"${off}>+ Abastecer</button></div>
         ${lst.length ? `<div class="mlist">${lst.map((f) => `<button class="frow" data-lanc="${esc(f.id)}">
             <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b>${f.mixIncerto ? `<span>mistura incerta: parcial sem KM</span>` : ""}</div>
             <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.fora ? "" : f.km > 0 && f.litros > 0 ? (f.junto ? "junto" : f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
@@ -2320,7 +2420,7 @@ td { padding: 10px 6px; }
       const ckc = combPorKm(car), custoComb = ckc ? ckc.v : null;
       const combAut = combPadrao(carId), kmlAut = fd.kmlPor[combAut] || fd.media; // tanque cheio do combustível que você usa
       const autonomia = car.tanque > 0 && kmlAut ? car.tanque * kmlAut : null;
-      const temEta = fd.trechos.some((f) => f.combTrecho === "Etanol");
+      const temEta = fd.trechos.slice(-8).some((f) => f.mix && (f.mix.Etanol || 0) > 0.05);
       const showCmp = opcoesComb(car).ops.length > 1;
       pane = `
         ${(() => {
@@ -2410,13 +2510,13 @@ td { padding: 10px 6px; }
           <div class="mrow">
             <button class="info" data-serv="${esc(m.id)}"><b>${esc(m.servico)}</b><span>${r.st === "none" ? "Toque em Feito hoje quando fizer" : "Próxima: " + [r.prox ? num(r.prox) + " km" + (r.dataKm ? " (por volta de " + dBR(dStr(r.dataKm)) + ")" : "") : "", r.proxData ? dBR(dStr(r.proxData)) : ""].filter(Boolean).join(" ou ") + (mResumo(r) ? " · " + mResumo(r) : "")}</span>${e.nHist ? `<small>${e.aprendeuMeses || e.aprendeuKm ? "Seu ritmo: a cada " + [e.aprendeuKm ? "~" + num(e.cadaKm) + " km" : "", e.aprendeuMeses ? "~" + num(e.cadaMeses, e.cadaMeses % 1 ? 1 : 0) + " meses" : ""].filter(Boolean).join(" ou ") : e.nHist + " registro, o ritmo aparece a partir do segundo"}${e.custoMedio ? " · média paga " + brl(e.custoMedio) : ""}</small>` : ""}</button>
             <div class="side"><span class="pill ${r.st}">${ST_LBL[r.st]}</span><button class="btn sm ghost" data-feito="${esc(m.id)}">Feito hoje</button></div>
-          </div>`).join("")}</div>` : `<div class="empty"><b>Nenhum serviço cadastrado</b><span>Adicione troca de óleo, pneus, revisão… e o app avisa quando estiver chegando a hora.</span></div>`}
-        <p class="note">Os prazos começam com valores genéricos. A partir da segunda vez que você registra um serviço, o app passa a usar o seu ritmo de trocas e a média do que você pagou.</p>
+          </div>`).join("")}</div>
+        <p class="note">Os prazos começam com valores genéricos. A partir da segunda vez que você registra um serviço, o app passa a usar o seu ritmo de trocas e a média do que você pagou.</p>` : `<div class="empty"><b>Nenhum serviço cadastrado</b><span>Adicione troca de óleo, pneus, revisão… e o app avisa quando estiver chegando a hora.</span></div>`}
         <div class="sec-h"><h2>Histórico do carro</h2><div class="btn-row"><button class="btn sm ghost" id="addHist"${off}>+ Registro</button>${S.downloads && hist.length ? `<button class="btn sm ghost" id="pdfHist">Baixar PDF</button>` : ""}</div></div>
         ${hist.length ? `<div class="mlist">${hist.map((h) => `<button class="frow" data-hist="${esc(h.id)}">
             <div class="fi"><b>${esc(h.servico)}</b><span>${[dBR(h.data), h.km ? "KM " + num(h.km) : "", h.local ? esc(h.local) : ""].filter(Boolean).join(" · ")}</span></div>
             <span></span><span class="val">${h.valor ? brl(h.valor) : ""}</span></button>`).join("")}</div>`
-          : `<div class="empty"><b>Nenhum serviço registrado ainda</b><span>Cada serviço feito no carro fica guardado aqui. Na hora de vender, baixe o histórico em PDF para mostrar ao comprador.</span></div>`}`;
+          : `<p class="note" style="margin:0">Cada serviço feito no carro fica guardado aqui. Na hora de vender, baixe o histórico em PDF para mostrar ao comprador.</p>`}`;
     } else {
       const lista = S.docs.filter((d) => docCar(d) === carId || docCar(d) === "pessoa").map((d) => ({ d, r: docStatus(d) }))
         .sort((a, b) => ({ venc: 0, breve: 1, ok: 2, none: 3 }[a.r.st] - { venc: 0, breve: 1, ok: 2, none: 3 }[b.r.st]) || String(a.d.venc || "9").localeCompare(String(b.d.venc || "9")));
@@ -3161,6 +3261,7 @@ td { padding: 10px 6px; }
         </tbody></table></div></div>` : `<div class="empty"><b>Nada anotado nos últimos 6 meses</b><span>Quando você lançar ganhos e gastos, o resumo aparece aqui.</span></div>`}
       ${ganhosCat ? `<div class="card"><div class="sec-h"><h2>Ganhos em ${mes}</h2></div>${ganhosCat}</div>` : ""}
       ${gastosCat ? `<div class="card"><div class="sec-h"><h2>Gastos em ${mes}</h2></div>${gastosCat}</div>` : ""}
+      ${diasSemanaHTML()}
       ${acertoPrevHTML()}
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
         <p class="note" style="margin:0">${S.local ? (temGoogle()
@@ -3228,6 +3329,13 @@ td { padding: 10px 6px; }
     { v: 12, data: "2026-11-04", itens: [
       "Lista de abastecimentos mais enxuta: data, combustível, km/l e valor. Toque num abastecimento para ver o resto.",
       "\"Hoje: ganhou / gastou\" aparece só nos dias em que você trabalhou.",
+      "Novo no Início: quanto cada km te dá, quanto custa e quanto sobra, e com quanto você deve fechar o mês se continuar assim.",
+      "Aviso quando o combustível mais barato por km muda (\"Agora o etanol compensa\").",
+      "Resumo mostra o melhor e o pior dia da semana pelos seus ganhos.",
+      "Carro com GNV ou híbrido de tomada: a conta separa a média de cada combustível (km/l, km/m³ e km/kWh).",
+      "App bem mais rápido com muitos meses de dados, e a tela passa sozinha para o mês novo na virada.",
+      "Correções nas contas: previsão com o tanque cheio no fim do mês, abastecimento sem KM e carro sem o tamanho do tanque.",
+      "\"5.899\" no preço agora vira R$ 5,899, botões maiores e a janela de lançar mais limpa no modo escuro.",
     ] },
     { v: 11, data: "2026-11-04", itens: [
       "Mistura do tanque: quando a confiança não é alta, o cartão mostra o que fazer no abastecimento para ela subir.",
@@ -3373,17 +3481,17 @@ td { padding: 10px 6px; }
           <input type="file" id="printIn" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
           <p class="hint" id="printMsg">${esc(F.printMsg || "Mande o print dos ganhos do app ou a foto do cupom. O Claude preenche e você confere.")}</p>` : ""}
         <div class="seg"><button type="button" data-tipo="ganho" aria-pressed="${F.tipo === "ganho"}">Ganho</button><button type="button" data-tipo="gasto" aria-pressed="${F.tipo === "gasto"}">Gasto</button></div>
-        <div class="chips">${cats.map((c) => `<button type="button" class="chip" data-cat="${esc(c.n)}" aria-pressed="${F.cat === c.n}">${esc(c.n)}</button>`).join("")}</div>
+        <div class="chips">${(F.id && !F.trocaCat ? cats.filter((c) => c.n === F.cat) : cats).map((c) => `<button type="button" class="chip" data-cat="${esc(c.n)}" aria-pressed="${F.cat === c.n}">${esc(c.n)}</button>`).join("")}${F.id && !F.trocaCat ? `<button type="button" class="chip" id="trocaCat">Trocar categoria</button>` : ""}</div>
         ${variosCarros() ? `<div class="fld"><span>Carro</span><div class="chips">${carros().map((c) => `<button type="button" class="chip" data-lcar="${esc(c.id)}" aria-pressed="${F.carId === c.id}">${esc(nomeCarro(c))}</button>`).join("")}</div></div>` : ""}
         <label class="fld"><span>Valor</span><div class="money"><em>R$</em><input id="fValor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${esc(F.valor)}"></div></label>
         <div class="row2"><label class="fld"><span>Data</span><input type="date" id="fData" value="${esc(F.data)}"></label>
-          <label class="fld"><span>Descrição</span><input id="fDesc" placeholder="${F.tipo === "ganho" ? "Ex.: manhã" : "Ex.: posto"}" value="${esc(F.desc)}"></label></div>
+          <label class="fld"><span>Descrição</span><input id="fDesc" placeholder="${F.tipo === "ganho" ? "Ex.: manhã" : F.cat === "Combustível" ? "Opcional" : "Ex.: almoço"}" value="${esc(F.desc)}"></label></div>
         ${F.cat === "Combustível" ? `<div class="fld"><span>Combustível</span><div class="chips">${combsLanc(F.carId, F.comb).map((c) => `<button type="button" class="chip" data-comb="${c}" aria-pressed="${F.comb === c}">${c}</button>`).join("")}</div></div>
           <label class="fld"><span>Posto</span><input id="fPosto" list="postosDL" autocomplete="off" placeholder="Ex.: Shell da Av. Brasil" value="${esc(F.posto || "")}"><datalist id="postosDL">${postosNomes().map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
           ${F.comb && anpMedio(F.comb) ? `<p class="hint" style="margin:0">Média em ${esc(anpLocal().nome)} ${anpQuando()}: ${brl(anpMedio(F.comb))}/${unidade(F.comb)} (ANP).</p>` : ""}` : ""}
         ${showKm ? `<div class="row2">${F.cat === "Combustível" ? `<label class="fld"><span>${F.comb === "GNV" ? "m³" : F.comb === "Elétrico" ? "kWh" : "Litros"}</span><input id="fLit" inputmode="decimal" placeholder="0,0" value="${esc(F.litros)}"></label>` : ""}
           <label class="fld"><span>KM no painel</span><input id="fKm" type="number" inputmode="numeric" placeholder="${kmAtual(F.carId) ? num(kmAtual(F.carId)) : "Ex.: 45900"}" value="${esc(F.km)}"></label></div>` : ""}
-        ${F.cat === "Combustível" ? `<label class="check"><input type="checkbox" id="fCheio"${F.cheio !== false ? " checked" : ""}><span>Enchi o tanque<br><small>Com o tanque cheio, os litros e o KM, o app calcula sua média por litro. Sem encher, anote o KM mesmo assim: ele mostra quanto havia no tanque.</small></span></label>` : ""}
+        ${F.cat === "Combustível" && !FORA.has(F.comb) ? `<label class="check"><input type="checkbox" id="fCheio"${F.cheio !== false ? " checked" : ""}><span>Enchi o tanque<br><small>Até o bico desligar. Sem encher, anote o KM mesmo assim.</small></span></label>` : ""}
         ${HIST_CATS.includes(F.cat) && !F.id ? `<div class="fld"><span>Qual serviço?</span><div class="chips">${S.manut.filter((m) => cid(m) === F.carId).map((m) => `<button type="button" class="chip" data-serv-l="${esc(m.id)}" aria-pressed="${F.servId === m.id}">${esc(m.servico)}</button>`).join("")}</div>
           <small class="note" style="margin:0">Escolhendo o serviço, o app aprende quanto custa e de quanto em quanto tempo você faz.</small></div>
           <label class="check"><input type="checkbox" id="fHist"${F.hist !== false ? " checked" : ""}><span>Guardar no histórico do carro<br><small>Fica registrado com a data e o KM para mostrar na hora de vender.</small></span></label>` : ""}
@@ -3398,6 +3506,7 @@ td { padding: 10px 6px; }
           <button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>Salvar</button></div>`;
     }, (draw, b) => {
       b.querySelectorAll("[data-tipo]").forEach((el) => el.onclick = () => { read(b); if (F.tipo !== el.dataset.tipo) { F.tipo = el.dataset.tipo; F.cat = null; } draw(); });
+      if (b.querySelector("#trocaCat")) b.querySelector("#trocaCat").onclick = () => { read(b); F.trocaCat = true; draw(); };
       b.querySelectorAll("[data-cat]").forEach((el) => el.onclick = () => { read(b); F.cat = el.dataset.cat; if (F.cat === "Combustível" && !F.comb) F.comb = combPadrao(F.carId); draw(); });
       b.querySelectorAll("[data-lcar]").forEach((el) => el.onclick = () => { read(b); F.carId = el.dataset.lcar; F.servId = null; draw(); });
       b.querySelectorAll("[data-serv-l]").forEach((el) => el.onclick = () => {

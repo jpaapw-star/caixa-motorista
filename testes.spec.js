@@ -867,8 +867,8 @@ test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) =
   await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
 });
 
-test("ganho por km divide só o ganho dos dias com KM anotado", async ({ page }) => {
-  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem KM. Antes: R$ 200 ÷ 100 km = R$ 2/km.
+test("lucro por dia conta os dias trabalhados", async ({ page }) => {
+  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem KM (o ganho por km agora fica no cartão "Cada km rodado")
   const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
   await page.clock.setFixedTime(base);
   const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
@@ -878,7 +878,7 @@ test("ganho por km divide só o ganho dos dias com KM anotado", async ({ page })
   }));
   await page.click("#trabMais");
   const q = page.locator("#tab-inicio .metrics").first();
-  await expect(q.locator("div", { hasText: /^Ganho por km/ }).first()).toContainText("R$ 1,00");
+  await expect(q).not.toContainText(/^Ganho por km/);
   await expect(q.locator("div", { hasText: "Lucro por dia" })).toContainText("R$ 100,00"); // 2 dias trabalhados
 });
 
@@ -1188,4 +1188,51 @@ test("Hoje: ganhou / gastou aparece só em dia de trabalho", async ({ page }) =>
 test("Hoje: ganhou / gastou aparece no dia em que trabalhou", async ({ page }) => {
   await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "gasto", cat: "Lavagem", valor: 40, ts: 1 }, { data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 150, ts: 2 }] }));
   await expect(page.locator("#tab-inicio .hoje")).toContainText("gastou");
+});
+
+// ---------- ideias automáticas do Início e do Resumo ----------
+// 70 dias rodando 50 km por dia (menos domingo), R$ 200 por dia e um tanque de gasolina por semana
+function meses70(base) {
+  const d = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10), L = [];
+  let km = 50000;
+  for (let n = -70; n <= -1; n++) {
+    if (new Date(base + n * 864e5).getUTCDay() === 0) continue;
+    km += 50;
+    L.push({ data: d(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: 200, ts: 1000 + n });
+    if (n % 7 === 0) L.push({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, litros: 25, valor: 150, km, ts: 2000 + n });
+  }
+  return L;
+}
+
+test("Início mostra quanto cada km dá, custa e sobra, e o lucro previsto do mês", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  await page.clock.setFixedTime(base);
+  await abrir(page, dados({ lancamentos: meses70(base), carros: [{ id: "principal", tanque: 50, combustivel: "Flex" }] }));
+  const kv = page.locator("#tab-inicio .card", { hasText: "Cada km rodado" });
+  await expect(kv).toContainText("te dá");
+  await expect(kv).toContainText("custa");
+  await expect(kv).toContainText("sobra");
+  await expect(kv).toContainText("dá prejuízo");
+  await expect(page.locator(".placa-prev")).toContainText("Se continuar assim, fecha");
+});
+
+test("Resumo mostra o melhor e o pior dia da semana pelos ganhos", async ({ page }) => {
+  const L = [];
+  for (let n = -84; n <= -1; n++) {
+    const w = new Date(dia(n) + "T12:00:00Z").getUTCDay();
+    if (w === 0) continue;
+    L.push({ data: dia(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: w === 6 ? 300 : w === 1 ? 180 : 220, ts: 100 + n });
+  }
+  await abrir(page, dados({ lancamentos: L }));
+  await aba(page, "resumo");
+  const c = page.locator("#tab-resumo .card", { hasText: "Dias da semana" });
+  await expect(c).toContainText("Sábado rende mais: R$ 300,00");
+  await expect(c).toContainText("Segunda rende menos: R$ 180,00");
+});
+
+test("avisa quando o combustível mais barato por km muda", async ({ page }) => {
+  const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"] });
+  L.forEach((x) => { if (x.comb === "Etanol") x.valor = x.litros * 3; }); // etanol a R$ 3: sai mais barato por km
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }, { melhorComb: { principal: { comb: "Gasolina", desde: dia(-30), antes: null } } }));
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Agora o etanol compensa" })).toContainText("mais barato por km que a gasolina");
 });
