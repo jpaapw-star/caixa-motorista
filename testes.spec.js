@@ -648,7 +648,7 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(page.locator("#tab-carro .metrics")).toContainText("12,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
   await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
-  await expect(page.locator("#tab-carro .metrics")).toContainText("Preço médio do etanol");
+  await expect(page.locator("#tab-carro .metrics")).toContainText("Preço do etanol");
   // por km: Σ(litros × preço) ÷ Σ(litros × km/l) = (120×6,25 + 80×4) ÷ (120×12 + 80×8) = R$ 0,51 (pelos litros seria R$ 0,54)
   await expect(page.locator("#tab-carro .metrics div", { hasText: "Combustível por km" })).toContainText("R$ 0,51");
 });
@@ -854,4 +854,31 @@ test("km por dia dá mais peso às últimas semanas", async ({ page }) => {
   await abrir(page, dados({ lancamentos: [lav(-60, 10000), lav(-30, 13000), lav(0, 13600)] }));
   await aba(page, "carro");
   await expect(page.locator("#tab-carro .odo-ritmo")).toContainText("47 km por dia");
+});
+
+test("previsão do mês desconta o combustível que já está no tanque", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 15, 15);
+  await page.clock.setFixedTime(base);
+  const d15 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  const ab = (d, km) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + d });
+  // 12 km/l, 48 km por dia, R$ 6,25: R$ 25 por dia. Encheu ontem: os 40 L (R$ 250) estão no tanque.
+  // Em média ficam 24 L (R$ 150) no tanque, então a previsão cai R$ 100 em relação a "gasto + R$ 25 por dia".
+  await abrir(page, dados({ lancamentos: [ab(-21, 10000), ab(-11, 10480), ab(-1, 10960)], carros: [{ id: "principal", tanque: 40 }] }));
+  const N = new Date(y, mo, 0).getDate();
+  const esperado = 500 + 25 * (N - 15) - 100;
+  const brl = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  await expect(page.locator("#tab-inicio .tile").nth(1).locator(".v")).toHaveText(brl(esperado));
+});
+
+test("previsão do mês mostra a faixa quando os km da semana variam", async ({ page }) => {
+  // uma semana 300 km, outra 500 km, por 8 semanas (12 km/l)
+  const abs = [];
+  let km = 20000;
+  for (let i = 8; i >= 0; i--) {
+    const dist = i % 2 ? 300 : 500;
+    if (i < 8) km += dist;
+    abs.push({ data: dia(-7 * i), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: i < 8 ? dist / 12 * 6 : 200, litros: i < 8 ? dist / 12 : 33, km, ts: 100 - i });
+  }
+  await abrir(page, dados({ lancamentos: abs }));
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/entre R\$\s[\d.,]+ e R\$\s[\d.,]+/);
 });
