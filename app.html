@@ -229,7 +229,7 @@ button { cursor: pointer; }
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* resumo */
-.mix-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--fill, var(--line)); }
+.mix-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--line); }
 .mix-bar i { display: block; height: 100%; }
 .mix-bar .g { background: var(--ink); }
 .mix-bar .e { background: var(--muted); }
@@ -987,11 +987,13 @@ td { padding: 10px 6px; }
     const G = t.porComb.Gasolina || 0, E = t.porComb.Etanol || 0, O = Math.max(0, t.litros - G - E), tot = t.litros || 1;
     // porcentagens inteiras (a medida não tem precisão para casas decimais), somando 100
     const pg = Math.round((G / tot) * 100), pe = t.litros > 0 ? Math.max(0, 100 - pg - Math.round((O / tot) * 100)) : 0;
+    // parte vazia do tanque, em % da capacidade (a mistura acima é em % do que tem dentro)
+    const vazio = Math.max(0, t.T - t.litros), pv = Math.round((vazio / t.T) * 100);
     const baixa = t.conf === "baixa";
     const quando = `${t.origem === "tanque cheio" ? "Tanque cheio" : t.origem === "abastecimento" ? "Abastecimento" : "Gasto pelos km"} em ${dBR(t.data).slice(0, 5)}${t.rodou > 0 ? `, menos ${num(t.rodou)} km rodados` : ""}`;
     return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
-      <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%"><i class="g" style="width:${(G / tot) * 100}%"></i><i class="e" style="width:${(E / tot) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / tot) * 100}%"></i>` : ""}</div>
-      <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:right"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span></div>
+      <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%, vazio ${pv}% do tanque"><i class="g" style="width:${(G / t.T) * 100}%"></i><i class="e" style="width:${(E / t.T) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / t.T) * 100}%"></i>` : ""}</div>
+      <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:center"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span><span style="text-align:right"><span class="label">Vazio</span><br><b class="num">${pv}%</b> <small>${num(vazio, 1)} L</small></span></div>
       ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}% · a gasolina já tem ${Math.round(ETANOL_NA_GASOLINA * 100)}% de etanol</small>` : ""}
       <small class="num" style="color:var(--muted)">${num(t.litros, 0)} L estimados de ${num(t.T)} L · ${quando}</small>
       ${baixa ? `<p class="note" style="margin:0">Estimativa de mistura ainda não confiável: ${esc(t.motivos.join("; ") || "poucos dados")}.</p>` : t.conf === "média" && t.motivos.length ? `<p class="note" style="margin:0">Aproximação: ${esc(t.motivos.join("; "))}.</p>` : ""}
@@ -2995,6 +2997,7 @@ td { padding: 10px 6px; }
   const NOVIDADES = [
     { v: 11, data: "2026-11-04", itens: [
       "Mistura do tanque: quando a confiança não é alta, o cartão mostra o que fazer no abastecimento para ela subir.",
+      "Mistura do tanque mostra também quanto do tanque está vazio, em % e em litros, e a barra passa a ser o tanque inteiro.",
     ] },
     { v: 10, data: "2026-11-04", itens: [
       "Previsão do mês pelos abastecimentos: com o tamanho do tanque, o app calcula quando você vai abastecer de novo e soma os abastecimentos que ainda cabem no mês.",

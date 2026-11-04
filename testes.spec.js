@@ -1040,6 +1040,7 @@ test("mistura do tanque mostra o álcool total, contando o etanol da gasolina", 
   await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, 312.5), ab(-1, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
   // 20 L de etanol + 30% dos 30 L de gasolina = 29 L de 50: 58%
   await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText("Álcool no tanque: 58%");
+  await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText(/Vazio\s*0%\s*0,0 L/i);
 });
 
 test("parcial sem KM: os km saem dos dias e a mistura continua com confiança média", async ({ page }) => {
@@ -1052,6 +1053,7 @@ test("parcial sem KM: os km saem dos dias e a mistura continua com confiança m�
   await expect(tq).not.toContainText("não confiável");
   await expect(tq).toContainText("Para melhorar a confiança:");
   await expect(tq).toContainText("anote o KM");
+  await expect(tq).toContainText("Vazio");
 });
 
 test("o que já estava no tanque antes do primeiro registro é estimado pelo consumo", async ({ page }) => {
