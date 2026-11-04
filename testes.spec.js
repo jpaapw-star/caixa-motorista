@@ -477,7 +477,7 @@ test("primeira vez: tutorial; depois, as novidades que ficaram para trás aparec
   await expect(page.locator("#tutTit")).toContainText("ganhos e gastos");
   await page.click("#tutVolta");
   await expect(page.locator("#tutTit")).toHaveText("Bem-vindo ao RLCAR");
-  for (let i = 0; i < 5; i++) await page.click("#tutProx");
+  for (let i = 0; i < 4; i++) await page.click("#tutProx");
   await expect(page.locator("#tutRest")).toBeVisible();
   await page.click("#tutProx"); // Começar
   await expect(page.locator("#sheet")).toBeHidden();
@@ -597,7 +597,8 @@ test("novo carro: se a BrasilAPI falha, busca na reserva; e dá para digitar à 
 test("Trabalho no mês mostra só o essencial e abre o resto ao tocar no título", async ({ page }) => {
   await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }], dias: [{ data: dia(0), horas: 5, corridas: 10, kmIni: 1000, kmFim: 1100, kmPass: 70 }] }));
   const quadro = page.locator("#tab-inicio .metrics").first();
-  await expect(quadro).toContainText("Ganho por hora");
+  await expect(quadro).not.toContainText("Ganho por hora");
+  await expect(page.locator("#jorIni")).toHaveCount(0); // sem o botão "Começar a trabalhar"
   await expect(quadro).toContainText("Ganhos nos apps");
   await expect(quadro).toContainText("Previsão do mês");
   await expect(quadro).not.toContainText("Lucro por hora");
@@ -748,6 +749,21 @@ test("poucos tanques com os dois combustíveis: avisa quantos faltam e não inve
   // sem o tamanho do tanque, pede uma vez
   await page.locator("#pedeTanque").click();
   await expect(page.locator("#cT")).toBeVisible();
+});
+
+test("com uma janela aberta, a tela de trás não rola, e volta para o mesmo lugar ao fechar", async ({ page }) => {
+  const ab = (d) => ({ data: dia(0), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 100, litros: 16, km: 1000 + 100 * (30 + d), ts: 100 + d });
+  await abrir(page, dados({ lancamentos: Array.from({ length: 25 }, (_, i) => ab(-i)) }));
+  await aba(page, "historico");
+  await page.evaluate(() => window.scrollTo(0, 400));
+  const antes = await page.evaluate(() => window.scrollY);
+  expect(antes).toBeGreaterThan(0);
+  await page.locator("#fab").click();
+  await expect(page.locator("body")).toHaveClass(/travado/);
+  await page.mouse.wheel(0, 600);
+  await page.locator("#fCancel").click();
+  await expect(page.locator("body")).not.toHaveClass(/travado/);
+  expect(await page.evaluate(() => window.scrollY)).toBe(antes);
 });
 
 test("KM digitado errado não infla a previsão nem o valor para manter o carro, e vira aviso", async ({ page }) => {

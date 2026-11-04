@@ -261,9 +261,10 @@ td:first-child { text-transform: capitalize; }
 
 /* folha (modal) */
 .sheet { position: fixed; inset: 0; z-index: 20; display: grid; align-items: end; justify-items: center; }
-.sheet-bg { position: absolute; inset: 0; background: rgb(0 0 0 / .45); border: 0; }
+.sheet-bg { position: absolute; inset: 0; background: rgb(0 0 0 / .45); border: 0; touch-action: none; }
+body.travado { position: fixed; left: 0; right: 0; overflow: hidden; }
 .sheet-panel {
-  position: relative; width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto; background: var(--surface);
+  position: relative; width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto; overscroll-behavior: contain; background: var(--surface);
   border-radius: 20px 20px 0 0; display: grid; gap: 14px;
   padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
@@ -646,10 +647,8 @@ td { padding: 10px 6px; }
         <button class="btn dark block" id="jorFim">${ICON.stop} Encerrar o dia</button>
       </div>`;
     }
-    return `<div class="jornada">
-      <button class="btn primary block" id="jorIni"${S.offline ? " disabled" : ""}>${ICON.play} Começar a trabalhar</button>
-      ${S.dias.length ? "" : `<p>Toque ao sair para rodar e de novo ao parar. As horas e os km do dia são contados sozinhos.</p>`}
-    </div>`;
+    // sem jornada aberta, o Início não mostra botão: o dia de trabalho, quando quiser, vai pelo Histórico
+    return "";
   }
 
   // ----- documentos, caixinha, custo real, postos -----
@@ -923,7 +922,6 @@ td { padding: 10px 6px; }
       alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
         txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. O ${num(para.k)} está ${src.onde || "nos seus registros"} e fica fora das contas até você corrigir.` });
     });
-    const perH = s.horas > 0 ? s.trab / s.horas : null;
     const lucroH = s.horas > 0 ? s.lucroCarro / s.horas : null;
     const lucroDia = s.dias > 0 ? s.lucroCarro / s.dias : null;
     const perKm = s.kmDias > 0 ? s.trab / s.kmDias : null;
@@ -950,8 +948,6 @@ td { padding: 10px 6px; }
       ${hoje.ganhos || hoje.gastos ? `<div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>` : ""}
       ${extras.length ? `<button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês <span class="seta">${trabAberto ? "▴" : "▾"}</span></h2>${resumoTrab}</button>` : `<div class="sec-h"><h2>Trabalho no mês</h2>${resumoTrab}</div>`}
       <div class="metrics">
-        <div><span class="label">Ganho por hora</span><span class="v">${m(perH, brl)}</span>${perH == null ? `<span class="hint">Use “Começar a trabalhar”</span>` : ""}</div>
-        <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
           const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? s.comb + cd.combDia * (N - new Date().getDate()) : null;
@@ -960,6 +956,7 @@ td { padding: 10px 6px; }
           return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : "Qual compensa colocar?"}</span></button>
           <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (Object.keys(cd.porComb).length > 1 ? Object.entries(cd.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v * (N - new Date().getDate()))).join(" · ") : "gasto até hoje + " + brl(cd.combDia) + " por dia") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
+        <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
         ${trabAberto ? extras.join("") : ""}
       </div>
       ${extras.length ? `<button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver mais números do mês"}</button>` : ""}
@@ -2294,11 +2291,24 @@ td { padding: 10px 6px; }
     const body = $("#sheetBody");
     const draw = () => { body.innerHTML = build(); bind(draw, body); };
     draw();
+    travaFundo(true);
     $("#sheet").hidden = false;
     const first = body.querySelector("input:not([type=hidden]):not([type=file]), button");
     if (first && !matchMedia("(pointer: coarse)").matches) first.focus();
   }
-  function closeSheet() { $("#sheet").hidden = true; $("#sheetBody").innerHTML = ""; }
+  function closeSheet() { $("#sheet").hidden = true; $("#sheetBody").innerHTML = ""; travaFundo(false); }
+  // com uma janela aberta, a tela de trás não rola (no iPhone, só esconder a rolagem do body não basta:
+  // o body fica parado no lugar e volta para a mesma posição ao fechar)
+  function travaFundo(on) {
+    const b = document.body;
+    if (on && !b.classList.contains("travado")) {
+      const y = window.scrollY;
+      b.dataset.y = String(y); b.style.top = -y + "px"; b.classList.add("travado");
+    } else if (!on && b.classList.contains("travado")) {
+      const y = Number(b.dataset.y) || 0;
+      b.classList.remove("travado"); b.style.top = ""; window.scrollTo(0, y);
+    }
+  }
   $("#sheetBg").addEventListener("click", closeSheet);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#sheet").hidden) closeSheet(); });
 
@@ -2321,6 +2331,10 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 7, data: "2026-11-04", itens: [
+      "Início mais limpo: saíram o botão \"Começar a trabalhar\" e o ganho por hora.",
+      "Com uma janela aberta, a tela de trás não rola mais junto.",
+    ] },
     { v: 6, data: "2026-11-03", itens: [
       "Média da gasolina e do etanol calculadas juntas, com todos os seus tanques, mesmo com os dois misturados. Ao lado de cada uma aparece a confiança: baixa, média ou alta.",
       "No abastecimento sem encher o tanque, anote o KM: o app calcula quanto combustível havia e acerta a mistura. Cada tanque mostra com quanto de etanol rodou.",
@@ -2354,7 +2368,6 @@ td { padding: 10px 6px; }
   const TUTORIAL = [
     { t: "Bem-vindo ao RLCAR", txt: "Aqui você controla quanto ganha, quanto gasta e quanto o carro custa de verdade. Tudo fica guardado no seu celular." },
     { t: "Anote ganhos e gastos", txt: "Toque no botão + amarelo, embaixo, para anotar um ganho (Uber, 99, iFood…) ou um gasto (combustível, manutenção, lavagem…). Na tela Início aparece o seu lucro do mês." },
-    { t: "Marque o dia de trabalho", txt: "Toque em Começar a trabalhar quando sair e em Encerrar quando parar. O app calcula quanto você ganha por hora e por km." },
     { t: "Caixinha do carro", txt: "O app mostra quanto separar de cada ganho para pagar pneus, óleo, seguro e IPVA sem susto." },
     { t: "Cuide do carro", txt: "Na aba Carro você vê o consumo, compara o preço do combustível com a média da sua cidade, recebe aviso das manutenções e dos documentos e consulta o valor do carro na FIPE." },
     { t: "Não perca seus dados", txt: "Na aba Resumo, toque em Salvar no Google (ou Salvar cópia) de vez em quando. Se trocar de celular ou formatar, é a cópia que traz tudo de volta." },
