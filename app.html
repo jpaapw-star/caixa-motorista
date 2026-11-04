@@ -1489,19 +1489,18 @@ td { padding: 10px 6px; }
     const fg = folgas();
     for (let d = new Date(prim + "T12:00"); dStr(d) < hojeS; d.setDate(d.getDate() + 1)) {
       const ds = dStr(d), w = d.getDay();
-      if (fg.has(ds)) continue; // férias não dizem nada sobre o dia da semana
+      if (fg.has(ds) || ehFeriado(ds)) continue; // férias e feriados não dizem nada sobre o dia da semana
       tot[w]++;
       tem[w] += fonte ? fonte[ds] || 0 : ativo.has(ds) ? 1 : 0;
     }
     const fr = tot.map((n, i) => (n ? tem[i] / n : 0)), media = fr.reduce((a, b) => a + b, 0) / 7;
     return media > 0 ? fr.map((v) => v / media) : null;
   }
-  function diasRestantesMes() {
+  function diasRestantesMes(ff = fatorFeriado()) {
     const h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate(), rest = N - h.getDate();
     const p = pesoDiasSemana();
-    if (!p) return rest;
     let soma = 0;
-    for (let i = 1; i <= rest; i++) soma += p[new Date(h.getFullYear(), h.getMonth(), h.getDate() + i).getDay()];
+    for (let i = 1; i <= rest; i++) soma += pesoDoDia(new Date(h.getFullYear(), h.getMonth(), h.getDate() + i), p, ff);
     return soma;
   }
   // Combustível que já está no tanque: os litros que sobraram do último abastecimento menos o que os km rodados
@@ -1538,6 +1537,57 @@ td { padding: 10px 6px; }
       valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
   }
 
+  // ----- feriados -----
+  // Feriados nacionais (fixos, mais Carnaval, Sexta-feira Santa e Corpus Christi, que dependem da Páscoa).
+  const ferCache = {};
+  function feriadosAno(y) {
+    if (ferCache[y]) return ferCache[y];
+    // Páscoa pelo cálculo de Meeus/Jones/Butcher
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+    const pas = (n) => dStr(new Date(y, mes - 1, dia + n));
+    const set = new Set(["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"].map((x) => y + "-" + x));
+    [-48, -47, -2, 60].forEach((n) => set.add(pas(n))); // Carnaval (seg e ter), Sexta-feira Santa, Corpus Christi
+    return (ferCache[y] = set);
+  }
+  const ehFeriado = (ds) => feriadosAno(Number(ds.slice(0, 4))).has(ds);
+  // Quanto você trabalha num feriado, comparado a um dia comum: pelos feriados do último ano em que você já
+  // anotava ganhos. (feriados com registro ÷ feriados) ÷ (dias com registro ÷ dias). Precisa de 2 feriados e de
+  // ganhos anotados com frequência. De 0 (nunca trabalha em feriado) a 1,5. Sem dados, 1 (dia comum).
+  function fatorFeriado() {
+    const lim = dStr(new Date(Date.now() - 365 * 864e5)), hojeS = today();
+    const G = S.lanc.filter((x) => x.tipo === "ganho" && x.trabalho && x.data && x.data >= lim && x.data < hojeS);
+    if (new Set(G.map((x) => x.data)).size < 10) return 1;
+    const ativ = new Set([...G.map((x) => x.data), ...S.dias.map((d) => d.data).filter((d) => d && d >= lim && d < hojeS)]);
+    const prim = [...ativ].sort()[0], fg = folgas();
+    let fer = 0, ferT = 0, com = 0, comT = 0;
+    for (let d = new Date(prim + "T12:00"); dStr(d) < hojeS; d.setDate(d.getDate() + 1)) {
+      const ds = dStr(d);
+      if (fg.has(ds)) continue;
+      if (ehFeriado(ds)) { fer++; if (ativ.has(ds)) ferT++; } else { com++; if (ativ.has(ds)) comT++; }
+    }
+    if (fer < 2 || !(comT > 0)) return 1;
+    return Math.min(1.5, Math.max(0, (ferT / fer) / (comT / com)));
+  }
+  // peso de um dia que ainda vai chegar: o do dia da semana, vezes o do feriado
+  const pesoDoDia = (d, peso, ff) => (peso ? peso[d.getDay()] : 1) * (ehFeriado(dStr(d)) ? ff : 1);
+  // ----- época do ano -----
+  // Com mais de um ano de KM: quanto você rodou por dia neste mesmo mês no ano passado ÷ nos 60 dias antes dele.
+  // Mostra se este mês costuma ser mais forte ou mais fraco que os meses anteriores. Vale metade do que mediu,
+  // entre 0,8 e 1,25.
+  function fatorEpoca(carId) {
+    const cad = cadeiaKm(carId);
+    if (cad.length < 2) return 1;
+    const h = new Date(), ini = new Date(h.getFullYear() - 1, h.getMonth(), 1), fim = new Date(h.getFullYear() - 1, h.getMonth() + 1, 1);
+    const antes = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() - 60);
+    if (cad[0].d > dStr(antes) || cad[cad.length - 1].d < dStr(fim)) return 1;
+    const kmMes = kmEntre(carId, dStr(ini), dStr(fim)) / Math.round((fim - ini) / 864e5), kmAntes = kmEntre(carId, dStr(antes), dStr(ini)) / 60;
+    if (!(kmAntes > 0) || !(kmMes > 0)) return 1;
+    const r = Math.min(2, Math.max(0.5, kmMes / kmAntes));
+    return Math.min(1.25, Math.max(0.8, 1 + (r - 1) * 0.5));
+  }
   // ----- ritmo do mês pelos ganhos -----
   // Ganho dos apps por dia neste mês (até ontem) ÷ ganho por dia nas 8 semanas antes do mês. Mês mais fraco
   // é sinal de que você está rodando menos, e vice-versa. O efeito cresce com os dias do mês (d ÷ (d + 10)):
@@ -1657,7 +1707,7 @@ td { padding: 10px 6px; }
   // (pelo dia da semana) ÷ km por litro da sua mistura. Quando o tanque chega no nível em que você costuma
   // abastecer (mediana dos últimos 10), entra um abastecimento com os litros que você costuma colocar (mediana),
   // pelo preço por litro da sua mistura (preço por km × km por litro). Os abastecimentos até o fim do mês são o que falta pagar.
-  function simulaAbast(car, t, pc, peso, k, fp = 1) {
+  function simulaAbast(car, t, pc, peso, k, fp = 1, ff = 1) {
     const fd = fuelData(car.id), rec = fd.all.filter((f) => f.litros > 0 && f.comb).slice(-10);
     const antes = rec.map((f) => f.nivelAntes).filter((v) => v != null), litros = rec.map((f) => Number(f.litros)).filter((v) => v > 0);
     if (antes.length < 3 || litros.length < 3 || !(pc.ck && pc.ck.kmL > 0)) return null;
@@ -1665,7 +1715,7 @@ td { padding: 10px 6px; }
     const gatilho = Math.max(0, med(antes)), poe = Math.min(t.T - gatilho, med(litros));
     if (!(poe > 1)) return null;
     const precoL = pc.ck.v * pc.ck.kmL * fp, h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate();
-    const gasta = (d) => (pc.kmDia * k * (peso ? peso[d.getDay()] : 1)) / pc.ck.kmL;
+    const gasta = (d, futuro) => (pc.kmDia * k * (futuro ? pesoDoDia(d, peso, ff) : peso ? peso[d.getDay()] : 1)) / pc.ck.kmL;
     // os litros do tanque valem no dia do último KM: os dias depois dele, até hoje, já foram rodados
     const cad = cadeiaKm(car.id), ultKm = cad.length ? cad[cad.length - 1].d : t.data;
     let nivel = t.litros, valor = 0;
@@ -1677,7 +1727,7 @@ td { padding: 10px 6px; }
     const lista = [];
     for (let i = 1; i <= N - h.getDate(); i++) {
       const d = new Date(h.getFullYear(), h.getMonth(), h.getDate() + i);
-      nivel -= gasta(d);
+      nivel -= gasta(d, true);
       if (nivel <= gatilho) {
         const l = Math.min(t.T - Math.max(0, nivel), poe);
         nivel = Math.max(0, nivel) + l; valor += l * precoL;
@@ -1695,7 +1745,7 @@ td { padding: 10px 6px; }
     if (pc.porAbast) linhas.push(pc.abast.length ? "abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "sem abastecer até o fim do mês");
     else if (!linhas.length) linhas.push("gasto até hoje + " + brl(pc.combDia) + " por dia");
     const pct = (f) => (f < 1 ? "−" : "+") + num(Math.abs(f - 1) * 100) + "%";
-    const aj = [[pc.cal, "histórico"], [pc.ganhos, "ganhos"], [pc.preco, "preço"]].filter(([f]) => Math.abs(f - 1) >= 0.03);
+    const aj = [[pc.cal, "histórico"], [pc.ganhos, "ganhos"], [pc.epoca, "época"], [pc.feriado, "feriados"], [pc.preco, "preço"]].filter(([f]) => Math.abs(f - 1) >= 0.03);
     if (aj.length) linhas.push("ajuste: " + aj.map(([f, n]) => n + " " + pct(f)).join(", "));
     return linhas.join("<br>");
   }
@@ -1707,9 +1757,10 @@ td { padding: 10px 6px; }
   // Os km que faltam são corrigidos pelo erro das previsões dos meses anteriores (calibracao).
   // A faixa sai de quanto os seus km por semana variaram nas últimas 8 semanas.
   function previsaoComb(gastoMes) {
-    const cd = custoDiario(), dr = diasRestantesMes();
+    const ff = fatorFeriado(), cd = custoDiario(), dr = diasRestantesMes(ff), drSemFer = ff === 1 ? dr : diasRestantesMes(1);
     if (!(cd.combDia > 0)) return null;
-    const futuro = cd.combDia * dr, cal = calibracao(), fg = fatorGanhos(), k = cal.k * fg, peso = pesoDiasSemana();
+    const futuro = cd.combDia * dr, cal = calibracao(), fg = fatorGanhos(), k0 = cal.k * fg, peso = pesoDiasSemana();
+    let epSoma = 0;
     let fpSoma = 0, fpPeso = 0;
     let ajuste = 0, sd2 = 0, bruto = 0, falta = 0, porAbast = false;
     const abast = [];
@@ -1720,9 +1771,9 @@ td { padding: 10px 6px; }
       ajuste += aj;
       if (!pc) { bruto -= aj; falta -= aj; continue; }
       bruto += pc.dia * dr - aj;
-      const fp = fatorPreco(car, pc.ck && pc.ck.porComb, dr);
-      fpSoma += fp * pc.dia; fpPeso += pc.dia;
-      const sim = t ? simulaAbast(car, t, pc, peso, k, fp) : null;
+      const fp = fatorPreco(car, pc.ck && pc.ck.porComb, dr), ep = fatorEpoca(car.id), k = k0 * ep;
+      fpSoma += fp * pc.dia; fpPeso += pc.dia; epSoma += ep * pc.dia;
+      const sim = t ? simulaAbast(car, t, pc, peso, k, fp, ff) : null;
       if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += pc.dia * dr * k * fp - aj;
       // km por semana nas últimas 8 semanas (só semanas com KM antes e depois)
       const cad = cadeiaKm(car.id), sem = [];
@@ -1747,7 +1798,7 @@ td { padding: 10px 6px; }
     // cada combustível com sua parte do que falta
     const fat = futuro > 0 ? (valor - gastoMes) / futuro : 0;
     return { valor, faixa, dr, porComb: Object.fromEntries(Object.entries(cd.porComb).map(([c, v]) => [c, v * dr * fat])), combDia: cd.combDia,
-      tanque: ajuste, bruto: Math.max(0, bruto), k, cal: cal.k, meses: cal.n, ganhos: fg, preco: fpPeso > 0 ? fpSoma / fpPeso : 1, abast, porAbast };
+      tanque: ajuste, bruto: Math.max(0, bruto), k: k0, cal: cal.k, epoca: fpPeso > 0 ? epSoma / fpPeso : 1, feriado: drSemFer > 0 ? dr / drSemFer : 1, meses: cal.n, ganhos: fg, preco: fpPeso > 0 ? fpSoma / fpPeso : 1, abast, porAbast };
   }
   function custoDiario() {
     const DM = 30.44;
@@ -2762,6 +2813,7 @@ td { padding: 10px 6px; }
       "Previsão do mês pelos abastecimentos: com o tamanho do tanque, o app calcula quando você vai abastecer de novo e soma os abastecimentos que ainda cabem no mês.",
       "O app aprende com o próprio erro: guarda a previsão de cada dia e, no fim do mês, corrige sozinho se ela saiu alta ou baixa.",
       "A previsão também acompanha os ganhos do mês, ignora férias e dias parados na média de km, e segue a tendência do preço da ANP na sua cidade.",
+      "Feriados contam pelo seu costume (se você não trabalha em feriado, ele sai da conta), e com mais de um ano de registros a previsão segue a época do ano.",
     ] },
     { v: 9, data: "2026-11-04", itens: [
       "Novo no Início: a mistura atual do tanque, com quanto há de gasolina e de etanol, os litros estimados e a confiança da estimativa.",

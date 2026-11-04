@@ -985,3 +985,31 @@ test("previsão do mês usa a tendência do preço da ANP", async ({ page }) => 
   await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }, { cidade: { uf: "SP", nome: "São Paulo" } }));
   await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/preço \+\d+%/);
 });
+
+test("previsão do mês tira o feriado de quem não trabalha em feriado", async ({ page }) => {
+  // 10 de dezembro de 2026: falta o Natal. Ganhos todo dia no último ano, menos nos feriados.
+  const base = Date.UTC(2026, 11, 10, 15), d = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  await page.clock.setFixedTime(base);
+  const fer = new Set(["2026-01-01", "2026-02-16", "2026-02-17", "2026-04-03", "2026-04-21", "2026-05-01", "2026-06-04", "2026-09-07", "2026-10-12", "2026-11-02", "2026-11-15", "2026-11-20", "2025-12-25"]);
+  const L = [];
+  for (let n = -380; n < 0; n++) if (!fer.has(d(n))) L.push({ data: d(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: 150, ts: 5000 + n });
+  [-31, -21, -11, -1].forEach((n, i) => L.push({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km: 10000 + 480 * i, ts: 100 + i }));
+  await abrir(page, dados({ lancamentos: L }));
+  // 21 dias faltando, o Natal vale 0: −5%
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText("feriados −5%");
+});
+
+test("previsão do mês segue a época do ano", async ({ page }) => {
+  // 10 de dezembro de 2026. No ano passado: 40 km por dia, e 60 km por dia em dezembro de 2025.
+  const base = Date.UTC(2026, 11, 10, 15), d = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  await page.clock.setFixedTime(base);
+  const L = [];
+  let km = 10000;
+  for (let n = -460; n <= -1; n += 5) {
+    const dez = d(n).startsWith("2025-12");
+    if (n > -460) km += dez ? 300 : 200;
+    L.push({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 100, litros: 16, km, ts: 1000 + n });
+  }
+  await abrir(page, dados({ lancamentos: L }));
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/época \+\d+%/);
+});
