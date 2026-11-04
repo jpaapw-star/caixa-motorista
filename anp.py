@@ -197,22 +197,76 @@ def achar_arquivo():
     except Exception as e:  # noqa: BLE001
         print("Não consegui abrir a página da ANP (%s). Tentando pelo nome do arquivo." % e)
     if candidatos:
-        return sorted(set(candidatos), key=fim_da_semana)[-1]
+        melhor = sorted(set(candidatos), key=fim_da_semana)[-1]
+        # a página às vezes demora a mostrar as semanas novas: tenta pelo nome as semanas depois da mais nova dela
+        fim = fim_da_semana(melhor)
+        for k in range(1, 5):
+            f = fim + timedelta(weeks=k)
+            if f >= date.today():
+                break
+            url = url_da_semana(f)
+            if existe(url):
+                melhor = url
+        return melhor
     # a semana da ANP vai de domingo a sábado
     hoje = date.today()
     sabado = hoje - timedelta(days=(hoje.weekday() - 5) % 7 or 7)
     for k in range(5):
-        fim = sabado - timedelta(weeks=k)
-        ini = fim - timedelta(days=6)
-        url = "%s%d/resumo_semanal_lpc_%s_%s.xlsx" % (PASTA_ARQUIVOS, fim.year, ini.isoformat(), fim.isoformat())
-        try:
-            req = urllib.request.Request(url, headers=CABECALHOS, method="HEAD")
-            with urllib.request.urlopen(req, timeout=30) as r:
-                if r.status == 200:
-                    return url
-        except Exception:  # noqa: BLE001
-            continue
+        url = url_da_semana(sabado - timedelta(weeks=k))
+        if existe(url):
+            return url
     raise SystemExit("Não achei a planilha semanal da ANP. O site pode ter mudado.")
+
+
+def url_da_semana(fim):
+    ini = fim - timedelta(days=6)
+    return "%s%d/resumo_semanal_lpc_%s_%s.xlsx" % (PASTA_ARQUIVOS, fim.year, ini.isoformat(), fim.isoformat())
+
+
+def existe(url):
+    try:
+        req = urllib.request.Request(url, headers=CABECALHOS, method="HEAD")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+HIST_SEMANAS = 10
+
+
+def juntar_historico(antigo, semana, estados, municipios, baixar_antigas):
+    """Preço médio de cada estado e cidade nas últimas semanas, para o app ver se o preço está subindo ou caindo.
+    Na primeira vez (menos de 6 semanas guardadas) baixa as semanas anteriores da ANP; se alguma falhar, segue sem ela."""
+    semanas = {}
+    for w in ((antigo or {}).get("historico") or {}).get("semanas") or []:
+        if w.get("fim"):
+            semanas[w["fim"]] = w
+    ant = (antigo or {}).get("anterior")
+    if ant and (ant.get("semana") or {}).get("fim") and ant["semana"]["fim"] not in semanas:
+        semanas[ant["semana"]["fim"]] = {"inicio": ant["semana"].get("inicio"), "fim": ant["semana"]["fim"],
+                                         "estados": ant.get("estados") or {}, "municipios": ant.get("municipios") or {}}
+    if antigo and antigo.get("semana", {}).get("fim") and antigo["semana"]["fim"] not in semanas and antigo.get("estados"):
+        semanas[antigo["semana"]["fim"]] = {"inicio": antigo["semana"].get("inicio"), "fim": antigo["semana"]["fim"],
+                                            "estados": resumo(antigo["estados"]), "municipios": resumo(antigo.get("municipios") or {})}
+    if semana.get("fim"):
+        semanas[semana["fim"]] = {"inicio": semana.get("inicio"), "fim": semana["fim"],
+                                  "estados": resumo(estados), "municipios": resumo(municipios)}
+    if baixar_antigas and semana.get("fim") and len(semanas) < 6:
+        fim = date.fromisoformat(semana["fim"])
+        for k in range(1, HIST_SEMANAS):
+            f = fim - timedelta(weeks=k)
+            if f.isoformat() in semanas:
+                continue
+            try:
+                e, m, _, sem = ler_planilha(baixar(url_da_semana(f), tentativas=1))
+                if len(e) >= 20:
+                    semanas[f.isoformat()] = {"inicio": (f - timedelta(days=6)).isoformat(), "fim": f.isoformat(),
+                                              "estados": resumo(e), "municipios": resumo(m)}
+                    print("  semana antiga guardada:", f.isoformat())
+            except Exception as ex:  # noqa: BLE001
+                print("  semana %s não baixou (%s), seguindo sem ela" % (f.isoformat(), ex))
+    return {"semanas": [semanas[k] for k in sorted(semanas)[-HIST_SEMANAS:]]}
 
 
 def resumo(lugares):
@@ -251,14 +305,16 @@ def main():
     if os.path.exists(SAIDA):
         with open(SAIDA, encoding="utf-8") as f:
             antigo = json.load(f)
+    tem_hist = len(((antigo or {}).get("historico") or {}).get("semanas") or []) >= 6
     if antigo and antigo.get("semana") == semana:
-        if antigo.get("estados") == estados and antigo.get("municipios") == municipios:
+        if antigo.get("estados") == estados and antigo.get("municipios") == municipios and tem_hist:
             print("Semana já gravada, nada mudou.")
             return
         novo["anterior"] = antigo.get("anterior")
     elif antigo and antigo.get("estados"):
         novo["anterior"] = {"semana": antigo.get("semana"), "estados": resumo(antigo["estados"]),
                             "municipios": resumo(antigo.get("municipios") or {})}
+    novo["historico"] = juntar_historico(antigo, semana, estados, municipios, baixar_antigas=len(sys.argv) <= 1)
     os.makedirs(os.path.dirname(SAIDA), exist_ok=True)
     with open(SAIDA, "w", encoding="utf-8") as f:
         json.dump(novo, f, ensure_ascii=False, separators=(",", ":"))
