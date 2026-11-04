@@ -486,10 +486,23 @@ td { padding: 10px 6px; }
   // O primeiro carro ("principal") existe mesmo antes de ser salvo.
   // Registros sem carId pertencem a ele.
   const PRINCIPAL = "principal";
+  // a lista só é refeita quando os carros mudam: o mesmo objeto de carro deixa as contas guardadas valerem
+  let carrosMemo = { de: null, val: null };
   function carros() {
+    if (carrosMemo.de === S.cars) return carrosMemo.val;
     const list = S.cars.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
     if (!list.some((c) => c.id === PRINCIPAL)) list.unshift({ id: PRINCIPAL, virtual: true, custos: {}, ts: 0 });
+    carrosMemo = { de: S.cars, val: list };
     return list;
+  }
+  // guarda o resultado de uma conta enquanto os dados de que ela depende não mudam
+  const memoCache = new Map();
+  function memo(chave, deps, fn) {
+    const c0 = memoCache.get(chave);
+    if (c0 && c0.deps.length === deps.length && c0.deps.every((d, i) => d === deps[i])) return c0.val;
+    const val = fn();
+    memoCache.set(chave, { deps, val });
+    return val;
   }
   const carAtivoId = () => { const a = S.settings.carroAtivo; return carros().some((c) => c.id === a) ? a : PRINCIPAL; };
   const carAtivo = () => carros().find((c) => c.id === carAtivoId());
@@ -506,6 +519,16 @@ td { padding: 10px 6px; }
     if (!s) return NaN;
     if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
     else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+    return parseFloat(s);
+  }
+  // litros, preço do litro e tamanho do tanque: aqui o ponto é sempre vírgula decimal ("5.899" = 5,899; "33.5" = 33,5),
+  // porque teclado de iPhone em outra região e Gboard mostram ponto, e nenhum desses passa de mil
+  function parseDec(s) {
+    if (s == null) return NaN;
+    s = String(s).trim().replace(/R\$|\s/g, "");
+    if (!s) return NaN;
+    if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+    else if ((s.match(/\./g) || []).length > 1) s = s.replace(/\./g, "");
     return parseFloat(s);
   }
   function parseHoras(s) {
@@ -638,6 +661,13 @@ td { padding: 10px 6px; }
     cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   };
 
+  // vários dados chegando juntos (abrir o app, restaurar, salvar) viram um desenho só da tela
+  let renderMarcado = false;
+  function renderLogo() {
+    if (renderMarcado) return;
+    renderMarcado = true;
+    queueMicrotask(() => { renderMarcado = false; render(); });
+  }
   function render() {
     $("#mesLbl").textContent = ymLabel(S.ym);
     $("#offline").hidden = !S.offline;
@@ -693,7 +723,10 @@ td { padding: 10px 6px; }
   // Os que ficam de fora são KM digitados errado: não entram na conta e viram aviso para conferir.
   function trechosKm(w) {
     const pts = w.slice().sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.k - b.k));
-    const diasEntre = (a, b) => (new Date(b.d + "T12:00") - new Date(a.d + "T12:00")) / 864e5;
+    // dia de cada anotação calculado uma vez só (a comparação abaixo roda para cada par de anotações)
+    const tDia = new Map();
+    pts.forEach((p) => { if (!tDia.has(p.d)) tDia.set(p.d, Date.parse(p.d + "T12:00:00Z") / 864e5); });
+    const diasEntre = (a, b) => Math.round(tDia.get(b.d) - tDia.get(a.d));
     const ok = (a, b) => b.k >= a.k && b.k - a.k <= KM_DIA_MAX * Math.max(diasEntre(a, b), 1);
     const best = pts.map(() => 1), prev = pts.map(() => -1);
     for (let i = 0; i < pts.length; i++) {
@@ -758,10 +791,16 @@ td { padding: 10px 6px; }
   }
   // KM que não fecha com o anterior (salto impossível ou KM que volta), nos últimos 120 dias: vira aviso no Início
   function kmParaConferir(carId) {
+    return memo("conferir:" + carId, [S.lanc, S.dias, S.hist, carById(carId), today()], () => kmParaConferir0(carId));
+  }
+  function kmParaConferir0(carId) {
     const lim = dStr(new Date(Date.now() - 120 * 864e5));
     return trechosKm(leiturasKm(carId).filter((x) => x.d >= lim)).suspeitos;
   }
   function ritmoKm(carId = carAtivoId()) {
+    return memo("ritmo:" + carId, [S.lanc, S.dias, S.hist, carById(carId), today()], () => ritmoKm0(carId));
+  }
+  function ritmoKm0(carId) {
     const car = carById(carId) || {};
     const r = leiturasKm(carId);
     const lim = new Date(); lim.setDate(lim.getDate() - 120);
@@ -1140,7 +1179,10 @@ td { padding: 10px 6px; }
   function calcFuelData(carId, car) {
     const base = S.lanc.filter((x) => x.cat === "Combustível" && cid(x) === carId).sort(byDataTs);
     const sus = new Set(kmParaConferir(carId).map((x) => x.para.d + "|" + x.para.k)); // KM digitado errado: o abastecimento conta como sem KM
-    const T = Number(car.tanque) || 50;
+    // sem o tamanho do tanque, ele é estimado pela maior parada no posto (um tanque quase vazio enchido) + 10%,
+    // em vez de supor 50 L, que desviava as médias de gasolina e etanol
+    const maiorParada = (() => { const p = {}; base.forEach((x) => { if (Number(x.litros) > 0) { const k = x.data + "|" + (Number(x.km) || x.id); p[k] = (p[k] || 0) + Number(x.litros); } }); return Math.max(0, ...Object.values(p)); })();
+    const T = Number(car.tanque) > 0 ? Number(car.tanque) : maiorParada > 20 ? Math.round(maiorParada * 1.1) : 50;
     const kmOk = (f) => f.km > 0 && !sus.has(f.data + "|" + Number(f.km));
     // KM estimado de um dia sem KM anotado: entre as anotações de antes e de depois (meio-dia),
     // ou, sem anotação depois, a última anotação mais os dias × km por dia
@@ -1170,6 +1212,9 @@ td { padding: 10px 6px; }
     const percorre = (kmlDe) => {
       const all = base.map((x) => ({ ...x }));
       let prev = null, accL = 0, parc = [], ultV = null, mix = null, parada = null, nivel = null, ultKm = 0;
+      // kmRef: KM em que o nível do tanque foi calculado pela última vez (o anotado, ou o estimado num parcial sem KM),
+      // para o abastecimento seguinte não descontar de novo os km já descontados
+      let kmRef = 0;
       // inc: parte do tanque que já estava lá antes do primeiro abastecimento anotado (origem desconhecida);
       // semRef: o volume no tanque não é conhecido (início sem tanque cheio, ou parcial sem KM), até o próximo tanque cheio
       let inc = null, semRef = true, kmEst = false;
@@ -1182,12 +1227,13 @@ td { padding: 10px 6px; }
         if (L > 0 && f.comb) {
           if (!(parada && f.km > 0 && Number(f.km) === parada.km && f.data === parada.data)) {
             // quanto havia no tanque ao chegar no posto: o que tinha menos o que os km rodados gastaram
-            let rodou = kmOk(f) && ultKm > 0 && f.km >= ultKm ? f.km - ultKm : null, est = false;
+            const ref = Math.max(ultKm, kmRef);
+            let rodou = kmOk(f) && ultKm > 0 && f.km >= ultKm ? Math.max(0, f.km - ref) : null, est = false;
             // parcial sem KM (ou com KM errado): os km desde o último KM saem das anotações em volta ou dos dias
-            if (rodou == null && ultKm > 0 && nivel != null) { const ke = kmEstimado(f.data); if (ke != null) { rodou = Math.max(0, ke - ultKm); est = true; } }
+            if (rodou == null && ultKm > 0 && nivel != null) { const ke = kmEstimado(f.data); if (ke != null) { rodou = Math.max(0, ke - ref); est = true; kmRef = Math.max(ref, ke); f.kmE = ke; } }
             const antesL = nivel != null && rodou != null && mix ? Math.max(0, nivel - rodou / kmlDe(mix)) : null;
             parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false, incAntes: inc, semRefAntes: semRef, est, estAntes: kmEst };
-            if (kmOk(f)) ultKm = Number(f.km);
+            if (kmOk(f)) { ultKm = Number(f.km); kmRef = ultKm; }
           }
           parada.add[f.comb] = (parada.add[f.comb] || 0) + L;
           parada.cheio = parada.cheio || cheio;
@@ -1211,7 +1257,7 @@ td { padding: 10px 6px; }
           f.incApos = inc; f.semRef = semRef; f.kmEst = kmEst;
           if (tot > T * 1.05) f.excede = tot; // mais litros que o tanque: tamanho do tanque ou litros errados
           f.nivelAntes = parada.antesL; f.nivelDepois = nivel; // litros no tanque ao chegar e ao sair do posto
-        } else if (kmOk(f)) ultKm = Number(f.km);
+        } else if (kmOk(f)) { ultKm = Number(f.km); kmRef = ultKm; }
         f.mixApos = mix;
         if (!(f.km > 0 && L > 0) || sus.has(f.data + "|" + Number(f.km))) { if (prev && L > 0) { accL += L; parc.push(f); } continue; }
         let seg = null;
@@ -1259,9 +1305,9 @@ td { padding: 10px 6px; }
     let faltaSeparar = null;
     if (usou.has("Gasolina") && usou.has("Etanol")) {
       // usa os dois: as médias de cada um só saem da conta junta; sem dados para ela, não mostra número inventado
-      if (ge && ge.Gasolina) for (const c of ["Gasolina", "Etanol"]) { kmlPor[c] = ge[c].kml; kmlConf[c] = ge[c].conf; }
+      if (ge && ge.Gasolina) for (const c of ["Gasolina", "Etanol"]) { kmlPor[c] = ge[c].kml; kmlConf[c] = ge[c].conf === "alta" && !(Number(car.tanque) > 0) ? "média" : ge[c].conf; }
       else { delete kmlPor.Gasolina; delete kmlPor.Etanol; faltaSeparar = ge ? ge.falta : { tanques: 3, parecidas: false }; }
-    } else if (ge && ge.Gasolina) for (const c of ["Gasolina", "Etanol"]) if (usou.has(c)) { kmlPor[c] = ge[c].kml; kmlConf[c] = ge[c].conf; }
+    } else if (ge && ge.Gasolina) for (const c of ["Gasolina", "Etanol"]) if (usou.has(c)) { kmlPor[c] = ge[c].kml; kmlConf[c] = ge[c].conf === "alta" && !(Number(car.tanque) > 0) ? "média" : ge[c].conf; }
     return {
       all, trechos, media: media(trechos), ultimo: trechos.length ? trechos[trechos.length - 1].kml : null,
       precoMedio: litTot > 0 ? sum(comL) / litTot : null,
@@ -1369,7 +1415,7 @@ td { padding: 10px 6px; }
       if (!kml && comb === "Etanol" && fd.kmlPor.Gasolina) { kml = fd.kmlPor.Gasolina * RAZAO_ETA; est = true; }
       if (!kml && comb === "Gasolina" && fd.kmlPor.Etanol) { kml = fd.kmlPor.Etanol / RAZAO_ETA; est = true; }
       const raw = precos[comb];
-      const digitado = raw != null && raw !== "" ? parseValor(raw) : null;
+      const digitado = raw != null && raw !== "" ? parseDec(raw) : null;
       const ultF = fd.all.filter((f) => f.comb === comb && f.litros > 0).pop();
       const anp = usarAnp ? anpMedio(comb) : null;
       const p = digitado || fd.precoUlt[comb] || anp || null;
@@ -1507,13 +1553,15 @@ td { padding: 10px 6px; }
     const kI = kmNaData(cad, ini), kF = kmNaData(cad, fim);
     if (!(kF > kI)) return null;
     const cadSet = new Set(cad.map((p) => p.d + "|" + p.k));
-    const fills = fd.all.filter((f) => f.litros > 0 && f.comb && f.km > 0 && f.mixApos && cadSet.has(f.data + "|" + Number(f.km)));
+    // abastecimento sem KM entra no KM estimado para o dia dele (a mistura muda ali)
+    const posKm = (f) => (f.km > 0 && cadSet.has(f.data + "|" + Number(f.km)) ? Number(f.km) : f.kmE > 0 ? f.kmE : null);
+    const fills = fd.all.filter((f) => f.litros > 0 && f.comb && f.mixApos && posKm(f) != null).sort((x, y) => posKm(x) - posKm(y));
     const kmlMix = (m) => Object.entries(m).reduce((a, [c, v]) => a + v * (fd.kmlPor[c] || fd.media || 0), 0);
     const preco = (c) => { const r = fd.all.filter((f) => f.comb === c && f.preco > 0 && f.data < fim).slice(-3); return r.length ? r.reduce((a, f) => a + f.preco, 0) / r.length : null; };
     const out = {};
     let km = 0;
     fills.forEach((f, i) => {
-      const a = Number(f.km), b = i + 1 < fills.length ? Number(fills[i + 1].km) : cad[cad.length - 1].k;
+      const a = posKm(f), b = i + 1 < fills.length ? posKm(fills[i + 1]) : Math.max(a, cad[cad.length - 1].k);
       const dentro = Math.max(0, Math.min(b, kF) - Math.max(a, kI)), k = kmlMix(f.mixApos);
       if (!(dentro > 0) || !(k > 0)) return;
       km += dentro;
@@ -1558,7 +1606,8 @@ td { padding: 10px 6px; }
   function rendPostos(car) {
     const fd = fuelData(car.id), por = {};
     fd.trechos.filter((f) => f.mix && !f.mixIncerto && f.combTrecho).forEach((f) => {
-      const e = fd.kmlPor[f.combTrecho] || fd.media;
+      // esperado para a mistura do trecho (80% etanol + 20% gasolina rende mais que etanol puro)
+      const e = Object.entries(f.mix).reduce((a, [c, v]) => a + v * (fd.kmlPor[c] || fd.media || 0), 0) || fd.kmlPor[f.combTrecho] || fd.media;
       const ini = fd.all.filter((x) => Number(x.km) === Number(f.kmIni) && x.litros > 0 && x.comb === f.combTrecho).pop();
       if (!e || !ini || !ini.posto) return;
       const k = f.combTrecho + "|" + String(ini.posto).trim().toLowerCase(), m = por[k] || (por[k] = { s: 0, n: 0 });
@@ -1870,7 +1919,8 @@ td { padding: 10px 6px; }
     // os litros do tanque valem no dia do último KM: os dias depois dele, até hoje, já foram rodados
     const cad = cadeiaKm(car.id), ultKm = cad.length ? cad[cad.length - 1].d : t.data;
     let nivel = t.litros, valor = 0;
-    for (let d = new Date((ultKm > t.data ? ultKm : t.data) + "T12:00"), hojeS = today(); ;) {
+    // sem KM no último abastecimento, o tanque de agora já descontou os dias até hoje: não desconta de novo
+    if (t.kmRef) for (let d = new Date((ultKm > t.data ? ultKm : t.data) + "T12:00"), hojeS = today(); ;) {
       d.setDate(d.getDate() + 1);
       if (dStr(d) > hojeS) break;
       nivel -= gasta(d);
@@ -1918,14 +1968,17 @@ td { padding: 10px 6px; }
     for (const car of carros()) {
       const t = tanqueAgora(car);
       const pc = cd.porCarro.find((x) => x.id === car.id);
-      const aj = t && t.medioValor != null ? Math.min(t.valor, pc ? pc.dia * dr : futuro) - t.medioValor : 0;
+      // o que está no tanque além do nível de costume já foi pago e ainda vai ser rodado (no máximo o que falta rodar);
+      // abaixo do nível de costume, falta pagar a diferença. Com o tanque cheio no fim do mês, não falta nada.
+      const fut = pc ? pc.dia * dr : futuro;
+      const aj = t && t.medioValor != null ? Math.min(t.valor - t.medioValor, fut) : 0;
       ajuste += aj;
       if (!pc) { bruto -= aj; falta -= aj; continue; }
-      bruto += pc.dia * dr - aj;
+      bruto += Math.max(0, pc.dia * dr - aj);
       const fp = fatorPreco(car, pc.ck && pc.ck.porComb, dr), ep = fatorEpoca(car.id), k = k0 * ep;
       fpSoma += fp * pc.dia; fpPeso += pc.dia; epSoma += ep * pc.dia;
       const sim = t ? simulaAbast(car, t, pc, peso, k, fp, ff) : null;
-      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += pc.dia * dr * k * fp - aj;
+      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += Math.max(0, pc.dia * dr * k * fp - aj);
       // km por semana nas últimas 8 semanas (só semanas com KM antes e depois)
       const cad = cadeiaKm(car.id), sem = [];
       for (let k = 8; k >= 1; k--) {
@@ -2235,6 +2288,9 @@ td { padding: 10px 6px; }
     if (e) return { nome: e.nome || c.uf, precos: e.precos || {}, antes: (ant.estados || {})[c.uf] || null, cidade: false };
     return null;
   }
+  // dias desde o fim da semana da pesquisa da ANP (ela às vezes passa semanas sem publicar)
+  const anpIdade = () => (S.anp && S.anp.semana && S.anp.semana.fim ? Math.round((new Date(today() + "T12:00") - new Date(S.anp.semana.fim + "T12:00")) / 864e5) : 99);
+  const anpQuando = () => (S.anp && S.anp.semana && S.anp.semana.fim ? (anpIdade() <= 7 ? "nesta semana" : "na semana até " + dBR(S.anp.semana.fim).slice(0, 5)) : "");
   const anpMedio = (comb) => { const l = anpLocal(); const p = l && l.precos[comb]; return p && p.medio > 0 ? Number(p.medio) : null; };
   const unidade = (comb) => (comb === "GNV" ? "m³" : "L");
   function anpCardHTML() {
@@ -2856,7 +2912,7 @@ td { padding: 10px 6px; }
         const doc = { modelo: modelo.slice(0, 60), combustivel: F.combustivel || "Flex" };
         const ano = intOrNull(F.ano); doc.ano = ano && ano >= 1950 && ano <= 2035 ? ano : undefined;
         const placa = String(F.placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7); doc.placa = placa || undefined;
-        const t = parseValor(F.tanqueTxt);
+        const t = parseDec(F.tanqueTxt);
         if (String(F.tanqueTxt || "").trim() && !(t > 0 && t <= 200)) { err.textContent = "Digite o tanque em litros, por exemplo 44."; return; }
         doc.tanque = t > 0 ? Math.round(t * 10) / 10 : undefined;
         ev.target.disabled = true;
@@ -3151,7 +3207,7 @@ td { padding: 10px 6px; }
           <label class="fld"><span>Descrição</span><input id="fDesc" placeholder="${F.tipo === "ganho" ? "Ex.: manhã" : "Ex.: posto"}" value="${esc(F.desc)}"></label></div>
         ${F.cat === "Combustível" ? `<div class="fld"><span>Combustível</span><div class="chips">${COMBS.map((c) => `<button type="button" class="chip" data-comb="${c}" aria-pressed="${F.comb === c}">${c}</button>`).join("")}</div></div>
           <label class="fld"><span>Posto</span><input id="fPosto" list="postosDL" autocomplete="off" placeholder="Ex.: Shell da Av. Brasil" value="${esc(F.posto || "")}"><datalist id="postosDL">${postosNomes().map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
-          ${F.comb && anpMedio(F.comb) ? `<p class="hint" style="margin:0">Média em ${esc(anpLocal().nome)} nesta semana: ${brl(anpMedio(F.comb))}/${unidade(F.comb)} (ANP).</p>` : ""}` : ""}
+          ${F.comb && anpMedio(F.comb) ? `<p class="hint" style="margin:0">Média em ${esc(anpLocal().nome)} ${anpQuando()}: ${brl(anpMedio(F.comb))}/${unidade(F.comb)} (ANP).</p>` : ""}` : ""}
         ${showKm ? `<div class="row2">${F.cat === "Combustível" ? `<label class="fld"><span>Litros</span><input id="fLit" inputmode="decimal" placeholder="0,0" value="${esc(F.litros)}"></label>` : ""}
           <label class="fld"><span>KM no painel</span><input id="fKm" type="number" inputmode="numeric" placeholder="${kmAtual(F.carId) ? num(kmAtual(F.carId)) : "Ex.: 45900"}" value="${esc(F.km)}"></label></div>` : ""}
         ${F.cat === "Combustível" ? `<label class="check"><input type="checkbox" id="fCheio"${F.cheio !== false ? " checked" : ""}><span>Enchi o tanque<br><small>Com o tanque cheio, os litros e o KM, o app calcula sua média por litro. Sem encher, anote o KM mesmo assim: ele mostra quanto havia no tanque.</small></span></label>` : ""}
@@ -3197,7 +3253,7 @@ td { padding: 10px 6px; }
         const doc = { data: F.data, tipo: F.tipo, cat: F.cat, trabalho: !!(c && c.w), valor: Math.round(valor * 100) / 100, desc: String(F.desc || "").trim().slice(0, 120), ts: F.ts || Date.now(), carId: F.carId };
         const kmN = intOrNull(F.km); if (kmN && KM_CATS.includes(F.cat)) doc.km = kmN;
         if (!kmConfere(ev.target, err, [doc.km], F.carId)) return;
-        const lit = parseValor(F.litros); if (lit > 0 && F.cat === "Combustível") doc.litros = Math.round(lit * 100) / 100;
+        const lit = parseDec(F.litros); if (lit > 0 && F.cat === "Combustível") doc.litros = Math.round(lit * 100) / 100;
         if (F.cat === "Combustível") { if (F.comb) doc.comb = F.comb; doc.cheio = F.cheio !== false; if (String(F.posto || "").trim()) doc.posto = String(F.posto).trim().slice(0, 60); }
         const guardarHist = HIST_CATS.includes(F.cat) && !F.id && F.hist !== false;
         if (doc.tipo === "ganho" && doc.trabalho) {
@@ -3229,7 +3285,7 @@ td { padding: 10px 6px; }
           }
           let msg = F.id ? "Lançamento atualizado" : (F.tipo === "ganho" ? "Ganho salvo" : "Gasto salvo");
           const media = doc.cat === "Combustível" && doc.litros > 0 && doc.comb ? anpMedio(doc.comb) : null;
-          if (media) {
+          if (media && anpIdade() <= 14) {
             const dif = doc.valor / doc.litros - media;
             if (Math.abs(dif) >= 0.01) msg += ". Você pagou " + brl(Math.abs(dif)) + (dif > 0 ? " a mais" : " a menos") + " por " + (doc.comb === "GNV" ? "m³" : "litro") + " que a média da cidade.";
           }
@@ -3539,6 +3595,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (c === "sem_internet") return "Sem internet agora. Tente de novo quando tiver sinal.";
     if (c === "sem_permissao") return "O Google não liberou o Drive. Tente de novo e marque a permissão do RLCAR.";
     if (c === "precisa_tocar") return "Entre de novo com a conta Google.";
+    if (c === "janela_bloqueada") return "O iPhone bloqueou a janela do Google. Toque de novo.";
     reportar(e);
     return "O Google Drive não respondeu. Tente de novo daqui a pouco.";
   }
@@ -3585,7 +3642,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       const err = b.querySelector("#fErr"), msg = b.querySelector("#bkMsg"), save = b.querySelector("#fSave");
       b.querySelector("#fCancel").onclick = closeSheet;
       const usar = (texto) => {
-        const d = JSON.parse(texto);
+        let d; try { d = JSON.parse(texto); } catch (e) { throw new Error("formato"); }
         if (!d || d.app !== "caixa-do-motorista" || typeof d.colecoes !== "object") throw new Error("formato");
         const n = COLECOES.reduce((a, [nome]) => a + (Array.isArray(d.colecoes[nome]) ? d.colecoes[nome].length : 0), 0);
         dados = d;
@@ -3616,12 +3673,27 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         const total = listas.reduce((a, [, , novos]) => a + novos.length, 0);
         let feito = 0;
         try {
-          for (const [nome, atuais, novos] of listas) {
-            const ids = new Set(novos.map((x) => String(x.id)));
-            for (const x of atuais) if (!ids.has(x.id)) await col(nome).doc(x.id).delete();
-            for (const { id, ...doc } of novos) {
-              await col(nome).doc(String(id)).set(doc);
-              feito++; if (feito % 10 === 0 || feito === total) save.textContent = "Restaurando… " + feito + " de " + total;
+          if (S.lote) {
+            // tudo numa gravação só: rápido, e se o iPhone fechar o app no meio nada fica pela metade
+            save.textContent = "Restaurando " + total + " registros…";
+            await new Promise((r) => setTimeout(r, 30)); // deixa o texto aparecer antes da gravação
+            const ops = [];
+            for (const [nome, atuais, novos] of listas) {
+              const ids = new Set(novos.map((x) => String(x.id)));
+              for (const { id, ...doc } of novos) ops.push([col(nome).doc(String(id)).path, doc]);
+              for (const x of atuais) if (!ids.has(x.id)) ops.push([col(nome).doc(x.id).path, undefined]);
+            }
+            await S.lote(ops);
+            feito = total;
+          } else {
+            for (const [nome, atuais, novos] of listas) {
+              const ids = new Set(novos.map((x) => String(x.id)));
+              // grava os novos antes de apagar os antigos: se parar no meio, nada some
+              for (const { id, ...doc } of novos) {
+                await col(nome).doc(String(id)).set(doc);
+                feito++; if (feito % 10 === 0 || feito === total) { save.textContent = "Restaurando… " + feito + " de " + total; await new Promise((r) => setTimeout(r)); }
+              }
+              for (const x of atuais) if (!ids.has(x.id)) await col(nome).doc(x.id).delete();
             }
           }
           const { jornada, ...cfg } = dados.config && typeof dados.config === "object" ? dados.config : {};
@@ -3727,11 +3799,21 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const el = document.getElementById("jorTimer");
     const j = S.settings.jornada;
     if (el && j && j.inicio) el.textContent = durStr(Date.now() - j.inicio);
-    if (S.dia !== today()) { S.dia = today(); if ($("#sheet").hidden) render(); }
+    viradaDoDia();
   }, 20000);
+  // o dia (e o mês) mudou com o app aberto ou parado no fundo: quem estava no mês atual passa para o novo
+  function viradaDoDia() {
+    if (S.dia === today()) return;
+    const noAtual = !S.dia || S.ym === S.dia.slice(0, 7);
+    S.dia = today();
+    if (noAtual) S.ym = ymNow();
+    if ($("#sheet").hidden) render();
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) viradaDoDia(); });
 
   // ---------- início ----------
   S.ym = ymNow();
+  S.dia = today();
   render();
 
   // Primeira vez no app: já cria a lista de manutenção padrão do primeiro carro (uma vez só;
@@ -3764,16 +3846,17 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const uid = user ? await user.id() : null;
     if (!db || !uid) { S.offline = true; render(); return; }
     S.base = db.doc("data/users/" + uid + "/app");
+    S.lote = db.lote || null;
     const onErr = () => { S.offline = true; render(); };
     const list = (q) => q.docs.map((d) => ({ id: d.id, ...d.data() }));
-    S.base.onSnapshot((s) => { S.settings = s.exists ? { ...s.data() } : {}; S.loaded.s = true; render(); talvezCriarPadrao(); }, onErr);
-    S.base.collection("lancamentos").onSnapshot((q) => { S.lanc = list(q); S.loaded.l = true; render(); }, onErr);
-    S.base.collection("dias").onSnapshot((q) => { S.dias = list(q); S.loaded.d = true; render(); }, onErr);
-    S.base.collection("manutencao").onSnapshot((q) => { S.manut = list(q); S.loaded.m = true; render(); talvezCriarPadrao(); }, onErr);
-    S.base.collection("historico").onSnapshot((q) => { S.hist = list(q); render(); }, onErr);
-    S.base.collection("documentos").onSnapshot((q) => { S.docs = list(q); render(); }, onErr);
-    S.base.collection("carros").onSnapshot((q) => { S.cars = list(q); render(); fipeAtualizarSozinho(); }, onErr);
-    S.base.collection("separados").onSnapshot((q) => { S.seps = list(q); render(); }, onErr);
+    S.base.onSnapshot((s) => { S.settings = s.exists ? { ...s.data() } : {}; S.loaded.s = true; renderLogo(); talvezCriarPadrao(); }, onErr);
+    S.base.collection("lancamentos").onSnapshot((q) => { S.lanc = list(q); S.loaded.l = true; renderLogo(); }, onErr);
+    S.base.collection("dias").onSnapshot((q) => { S.dias = list(q); S.loaded.d = true; renderLogo(); }, onErr);
+    S.base.collection("manutencao").onSnapshot((q) => { S.manut = list(q); S.loaded.m = true; renderLogo(); talvezCriarPadrao(); }, onErr);
+    S.base.collection("historico").onSnapshot((q) => { S.hist = list(q); renderLogo(); }, onErr);
+    S.base.collection("documentos").onSnapshot((q) => { S.docs = list(q); renderLogo(); }, onErr);
+    S.base.collection("carros").onSnapshot((q) => { S.cars = list(q); renderLogo(); fipeAtualizarSozinho(); }, onErr);
+    S.base.collection("separados").onSnapshot((q) => { S.seps = list(q); renderLogo(); }, onErr);
     C.use("sample").then(async (sm) => {
       if (!sm) return;
       S.sample = sm;
