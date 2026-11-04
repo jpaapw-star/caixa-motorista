@@ -992,7 +992,7 @@ td { padding: 10px 6px; }
     return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
       <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%"><i class="g" style="width:${(G / tot) * 100}%"></i><i class="e" style="width:${(E / tot) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / tot) * 100}%"></i>` : ""}</div>
       <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:right"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span></div>
-      ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}%, contando os ${Math.round(ETANOL_NA_GASOLINA * 100)}% de etanol que já vêm na gasolina</small>` : ""}
+      ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}% · a gasolina já tem ${Math.round(ETANOL_NA_GASOLINA * 100)}% de etanol</small>` : ""}
       <small class="num" style="color:var(--muted)">${num(t.litros, 0)} L estimados de ${num(t.T)} L · ${quando}</small>
       ${baixa ? `<p class="note" style="margin:0">Estimativa de mistura ainda não confiável: ${esc(t.motivos.join("; ") || "poucos dados")}.</p>` : t.conf === "média" && t.motivos.length ? `<p class="note" style="margin:0">Aproximação: ${esc(t.motivos.join("; "))}.</p>` : ""}
       ${ecTxt}
