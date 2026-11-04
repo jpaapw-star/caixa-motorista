@@ -1293,6 +1293,7 @@ td { padding: 10px 6px; }
     const maiorParada = (() => { const p = {}; base.forEach((x) => { if (Number(x.litros) > 0 && !FORA.has(x.comb)) { const k = x.data + "|" + (Number(x.km) || x.id); p[k] = (p[k] || 0) + Number(x.litros); } }); return Math.max(0, ...Object.values(p)); })();
     const T = Number(car.tanque) > 0 ? Number(car.tanque) : maiorParada > 20 ? Math.round(maiorParada * 1.1) : 50;
     const kmOk = (f) => f.km > 0 && !sus.has(f.data + "|" + Number(f.km));
+    const curva = curvaPonteiro(base, T);
     // KM estimado de um dia sem KM anotado: entre as anotações de antes e de depois (meio-dia),
     // ou, sem anotação depois, a última anotação mais os dias × km por dia
     const cadK = cadeiaKm(carId), rkK = ritmoKm(carId);
@@ -1360,7 +1361,15 @@ td { padding: 10px 6px; }
             let rodou = kmOk(f) && ultKm > 0 && f.km >= ultKm ? Math.max(0, f.km - ref) : null, est = false;
             // parcial sem KM (ou com KM errado): os km desde o último KM saem das anotações em volta ou dos dias
             if (rodou == null && ultKm > 0 && nivel != null) { const ke = kmEstimado(f.data); if (ke != null) { rodou = Math.max(0, ke - ref); est = true; kmRef = Math.max(ref, ke); f.kmE = ke; } }
-            const antesL = nivel != null && rodou != null && mix ? Math.max(0, nivel - (rodou * partLiq) / kmlDe(mix)) : null;
+            let antesL = nivel != null && rodou != null && mix ? Math.max(0, nivel - (rodou * partLiq) / kmlDe(mix)) : null;
+            // ponteiro lido na foto do painel antes de abastecer: corrige o nível pela curva do seu carro, com o peso
+            // da incerteza dele (no começo pequeno; cresce quando a curva já foi aprendida)
+            const pt = f.ponteiro != null && f.ponteiro !== "" ? Number(f.ponteiro) : NaN;
+            if (pt >= 0 && pt <= 1 && mix) {
+              const g = curva.nivel(pt), sg = curva.sd;
+              if (antesL != null) { const sk = (est ? 0.1 : 0.05) * T, w = (sk * sk) / (sk * sk + sg * sg); antesL += (g - antesL) * w; f.usouPonteiro = w; }
+              else if (curva.n >= 3) { antesL = g; f.usouPonteiro = 1; }
+            }
             parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false, incAntes: inc, semRefAntes: semRef, est, estAntes: kmEst };
             if (kmOk(f)) { ultKm = Number(f.km); kmRef = ultKm; }
           }
@@ -1588,6 +1597,34 @@ td { padding: 10px 6px; }
       if (ts.length >= 4 && bons.length >= 3 && bons.length < ts.length) { ts = bons; a = ajuste(ts); }
     }
     return { Gasolina: { kml: a.kg, conf: a.cg }, Etanol: { kml: a.ke, conf: a.ce }, naoEncheu };
+  }
+  // ----- ponteiro de combustível (foto do painel) -----
+  // O ponteiro não é linear e cada carro tem a sua curva (formato do tanque, boia, calibragem de "cheio"); o erro
+  // medido fica em 3% a 8% do tanque. Por isso o app aprende a curva: cada foto antes de encher até o bico dá um par
+  // real (posição do ponteiro, litros que havia = tanque − litros que entraram). Com 3 pares ou mais: reta pelos
+  // mínimos quadrados (inclinação entre 0,6 e 1,4) e incerteza pela sobra dos pares (no mínimo 3% do tanque).
+  // Antes disso: ponteiro = fração do tanque, com incerteza de 10% do tanque. Ponteiro em "cheio" (95% ou mais)
+  // não entra na curva: só diz que há 85% ou mais.
+  function curvaPonteiro(base, T) {
+    const paradas = {};
+    base.forEach((x) => {
+      if (!(Number(x.litros) > 0) || FORA.has(x.comb)) return;
+      const k = x.data + "|" + (Number(x.km) || x.id), p = paradas[k] || (paradas[k] = { L: 0, cheio: false, pt: null });
+      p.L += Number(x.litros); p.cheio = p.cheio || x.cheio !== false;
+      if (x.ponteiro != null && x.ponteiro !== "" && Number(x.ponteiro) >= 0) p.pt = Number(x.ponteiro);
+    });
+    const pares = Object.values(paradas).filter((p) => p.cheio && p.pt != null && p.pt < 0.95 && p.L <= T * 1.05).map((p) => ({ x: p.pt, y: Math.max(0, T - p.L) / T }));
+    let a = 0, b = 1, sd = 0.1;
+    if (pares.length >= 3) {
+      const n = pares.length, mx = pares.reduce((s, p) => s + p.x, 0) / n, my = pares.reduce((s, p) => s + p.y, 0) / n;
+      const sxx = pares.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = pares.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+      b = sxx > 0.01 ? Math.min(1.4, Math.max(0.6, sxy / sxx)) : 1;
+      a = my - b * mx;
+      const res = pares.reduce((s, p) => s + (p.y - a - b * p.x) ** 2, 0);
+      sd = Math.max(0.03, Math.sqrt(res / Math.max(1, n - 2)));
+    }
+    const nivel = (p) => { const f = Math.min(1, Math.max(0, a + b * p)); return (p >= 0.95 ? Math.max(0.85, f) : f) * T; };
+    return { nivel, sd: sd * T, n: pares.length, a, b };
   }
   // ----- médias de qualquer número de combustíveis (carro com GNV, híbrido de tomada, elétrico) -----
   // Cada trecho de tanque cheio a tanque cheio: km = Σ volume × km por unidade de cada combustível (os litros de

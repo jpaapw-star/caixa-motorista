@@ -1236,3 +1236,25 @@ test("avisa quando o combustível mais barato por km muda", async ({ page }) => 
   await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }, { melhorComb: { principal: { comb: "Gasolina", desde: dia(-30), antes: null } } }));
   await expect(page.locator("#tab-inicio .alert", { hasText: "Agora o etanol compensa" })).toContainText("mais barato por km que a gasolina");
 });
+
+// ---------- ponteiro de combustível (foto do painel) ----------
+test("ponteiro lido antes de abastecer corrige o nível do tanque pela curva aprendida", async ({ page, browser }) => {
+  const ab = (d, km, comb, litros, cheio, ponteiro) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor: litros * 5, litros, km, ponteiro, ts: 100 + d });
+  // tanque de 50 L, 12 km/l; três fotos antes de encher ensinam a curva (havia 20, 15 e 25 L)
+  const L = (comPt) => [
+    ab(-40, 10000, "Gasolina", 50, true), ab(-30, 10360, "Gasolina", 30, true, 0.4), ab(-20, 10780, "Gasolina", 35, true, 0.3),
+    ab(-12, 11080, "Gasolina", 25, true, 0.5),
+    // parcial sem KM: pelos dias o app acha que gastou mais; o ponteiro diz que havia 40 L (0,8)
+    ab(-2, null, "Etanol", 10, false, comPt ? 0.8 : undefined),
+  ];
+  const vazio = async (p) => Number((await p.locator(".card", { hasText: "Mistura atual do tanque" }).innerText()).match(/Vazio\s*\d+%\s*([\d,]+) L/i)[1].replace(",", "."));
+  await abrir(page, dados({ lancamentos: L(false), carros: [{ id: "principal", tanque: 50 }] }));
+  const semPt = await vazio(page);
+  const p2 = await browser.newPage();
+  await abrir(p2, dados({ lancamentos: L(true), carros: [{ id: "principal", tanque: 50 }] }));
+  const comPt = await vazio(p2);
+  // com o ponteiro, sobra menos espaço vazio (havia mais no tanque do que os dias sugeriam)
+  expect(semPt).toBeGreaterThan(20);
+  expect(comPt).toBeLessThan(12);
+  await p2.close();
+});
