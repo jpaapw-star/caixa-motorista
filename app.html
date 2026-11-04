@@ -574,10 +574,10 @@ td { padding: 10px 6px; }
     const dias = new Set([...D.map((d) => d.data), ...LT.map((x) => x.data)]).size;
     const kmOkDia = (d) => d.kmFim > 0 && d.kmIni > 0 && d.kmFim >= d.kmIni;
     const kmDias = D.reduce((a, d) => a + (kmOkDia(d) ? d.kmFim - d.kmIni : 0), 0);
-    // cada número "por" divide só pelo que foi anotado junto: ganho dos dias com horas pelas horas,
-    // dos dias com KM pelos km, dos dias com corridas pelas corridas (um dia sem horas anotadas não infla o por hora)
+    // cada número "por" divide só pelo que foi anotado junto: ganho dos dias com KM pelos km,
+    // dos dias com corridas pelas corridas (um dia sem KM anotado não infla o por km)
     const trabEm = (f) => { const ds = new Set(D.filter(f).map((d) => d.data)); return sum(LT.filter((x) => ds.has(x.data))); };
-    const trabHoras = trabEm((d) => d.horas > 0), trabKm = trabEm(kmOkDia), trabCorr = trabEm((d) => d.corridas > 0);
+    const trabKm = trabEm(kmOkDia), trabCorr = trabEm((d) => d.corridas > 0);
     // km com passageiro: só dos dias em que foi anotado
     const DPa = D.filter((d) => d.kmPass > 0);
     const datasPass = new Set(DPa.map((d) => d.data));
@@ -593,10 +593,8 @@ td { padding: 10px 6px; }
     const litros = sum(L, "litros");
     const comb = sum(L.filter((x) => x.cat === "Combustível"));
     const lucroCarro = trab - gastos;
-    // lucro por hora: a parte do lucro que veio dos dias com horas anotadas, pelas horas
-    const lucroH = horas > 0 ? (trab > 0 ? lucroCarro * trabHoras / trab : lucroCarro) / horas : null;
     return { L, D, ganhos, gastos, saldo: ganhos - gastos, trab, lucroCarro, horas, corridas, dias, kmDias, span, litros, comb, kmPass, trabPass, vazioPct,
-      lucroH, lucroDia: dias > 0 ? lucroCarro / dias : null, perKm: kmDias > 0 ? trabKm / kmDias : null, porCorrida: corridas > 0 ? trabCorr / corridas : null };
+      lucroDia: dias > 0 ? lucroCarro / dias : null, perKm: kmDias > 0 ? trabKm / kmDias : null, porCorrida: corridas > 0 ? trabCorr / corridas : null };
   }
   function mStatus(m0, km) {
     const m = efetivo(m0);
@@ -969,12 +967,11 @@ td { padding: 10px 6px; }
       alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
         txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. O ${num(para.k)} está ${src.onde || "nos seus registros"} e fica fora das contas até você corrigir.` });
     });
-    const { lucroH, lucroDia, perKm } = s;
+    const { lucroDia, perKm } = s;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
     // números extras do mês: só os que já têm valor (nada de quadro com "—")
     const tile = (label, v) => v == null ? null : `<div><span class="label">${label}</span><span class="v">${v}</span></div>`;
     const extras = [
-      tile("Lucro por hora", lucroH == null ? null : brl(lucroH)),
       tile("Lucro por dia", lucroDia == null ? null : brl(lucroDia)),
       tile("Ganho por km", perKm == null ? null : brl(perKm)),
       tile("Por corrida", s.porCorrida == null ? null : brl(s.porCorrida)),
@@ -2318,12 +2315,12 @@ td { padding: 10px 6px; }
       return arr.length ? `<div class="bars">${arr.map(([c, v]) => `<div class="bar-row"><span>${esc(c)}</span><span class="num">${brl(v)}</span><div class="track"><i style="width:${(v / top) * 100}%;background:var(--${tipo})"></i></div></div>`).join("")}</div>` : "";
     };
     const mes = MES[Number(S.ym.slice(5)) - 1];
-    const comDados = data.filter((d) => d.ganhos || d.gastos), comHoras = comDados.some((d) => d.horas > 0);
+    const comDados = data.filter((d) => d.ganhos || d.gastos);
     const ganhosCat = porCat("ganho"), gastosCat = porCat("gasto");
     $("#tab-resumo").innerHTML = `
       ${comDados.length ? `<div class="card"><div class="sec-h"><h2>Últimos 6 meses</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
-        <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th>${comHoras ? "<th>Lucro por hora</th>" : ""}</tr></thead><tbody>
-        ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td>${comHoras ? `<td class="val ${d.lucroH < 0 ? "x" : ""}">${d.lucroH != null ? brl(d.lucroH) : "—"}</td>` : ""}</tr>`).join("")}
+        <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th></tr></thead><tbody>
+        ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td></tr>`).join("")}
         </tbody></table></div></div>` : `<div class="empty"><b>Nada anotado nos últimos 6 meses</b><span>Quando você lançar ganhos e gastos, o resumo aparece aqui.</span></div>`}
       ${ganhosCat ? `<div class="card"><div class="sec-h"><h2>Ganhos em ${mes}</h2></div>${ganhosCat}</div>` : ""}
       ${gastosCat ? `<div class="card"><div class="sec-h"><h2>Gastos em ${mes}</h2></div>${gastosCat}</div>` : ""}
@@ -2391,9 +2388,9 @@ td { padding: 10px 6px; }
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
     { v: 7, data: "2026-11-04", itens: [
-      "Início mais limpo: saíram o botão \"Começar a trabalhar\" e o ganho por hora.",
+      "Início mais limpo: saíram o botão \"Começar a trabalhar\", o ganho por hora e o lucro por hora.",
       "Com uma janela aberta, a tela de trás não rola mais junto.",
-      "Contas mais certas: lucro por hora e ganho por km usam só os dias em que você anotou horas e KM; combustível por km usa o preço de hoje e conta o etanol pelos km que ele rende; manutenção por km vem da sua lista de serviços; km do mês divide a virada do mês e ignora KM digitado errado; postos mostram o preço mais recente.",
+      "Contas mais certas: ganho por km e por corrida usam só os dias em que você anotou KM e corridas; combustível por km usa o preço de hoje e conta o etanol pelos km que ele rende; manutenção por km vem da sua lista de serviços; km do mês divide a virada do mês e ignora KM digitado errado; postos mostram o preço mais recente.",
     ] },
     { v: 6, data: "2026-11-03", itens: [
       "Média da gasolina e do etanol calculadas juntas, com todos os seus tanques, mesmo com os dois misturados. Ao lado de cada uma aparece a confiança: baixa, média ou alta.",

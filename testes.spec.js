@@ -601,10 +601,11 @@ test("Trabalho no mês mostra só o essencial e abre o resto ao tocar no título
   await expect(page.locator("#jorIni")).toHaveCount(0); // sem o botão "Começar a trabalhar"
   await expect(quadro).toContainText("Ganhos nos apps");
   await expect(quadro).toContainText("Previsão do mês");
-  await expect(quadro).not.toContainText("Lucro por hora");
+  await expect(quadro).not.toContainText("Lucro por dia");
   await expect(quadro).not.toContainText("Km rodados vazio");
   await page.click("#trabMais");
-  await expect(quadro).toContainText("Lucro por hora");
+  await expect(quadro).not.toContainText("por hora"); // nem ganho nem lucro por hora
+  await expect(quadro).toContainText("Lucro por dia");
   await expect(quadro).toContainText("Ganho por km c/ passageiro");
   await page.reload(); // fica lembrado
   await expect(page.locator("#tab-inicio .metrics").first()).toContainText("Lucro por dia");
@@ -809,8 +810,8 @@ test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) =
   await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
 });
 
-test("lucro por hora e ganho por km dividem só o que foi anotado junto", async ({ page }) => {
-  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem horas nem KM. Antes: R$ 200 ÷ 5 h = R$ 40/h e R$ 2/km.
+test("ganho por km divide só o ganho dos dias com KM anotado", async ({ page }) => {
+  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem KM. Antes: R$ 200 ÷ 100 km = R$ 2/km.
   const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
   await page.clock.setFixedTime(base);
   const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
@@ -820,7 +821,6 @@ test("lucro por hora e ganho por km dividem só o que foi anotado junto", async 
   }));
   await page.click("#trabMais");
   const q = page.locator("#tab-inicio .metrics").first();
-  await expect(q.locator("div", { hasText: "Lucro por hora" })).toContainText("R$ 20,00");
   await expect(q.locator("div", { hasText: /^Ganho por km/ }).first()).toContainText("R$ 1,00");
   await expect(q.locator("div", { hasText: "Lucro por dia" })).toContainText("R$ 100,00"); // 2 dias trabalhados
 });
