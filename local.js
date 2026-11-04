@@ -28,6 +28,20 @@
     if (!pediuPersistir && navigator.storage && navigator.storage.persist) { pediuPersistir = true; navigator.storage.persist().catch(() => {}); }
     avisar();
   }
+  // várias mudanças de uma vez, gravadas juntas (restaurar cópia): ou entram todas, ou nenhuma
+  function gravarLote(ops) {
+    const antes = new Map();
+    ops.forEach(([path, valor]) => {
+      if (!antes.has(path)) antes.set(path, store[path]);
+      if (valor === undefined) delete store[path]; else store[path] = copia(valor);
+    });
+    try { localStorage.setItem(KEY, JSON.stringify(store)); }
+    catch (e) {
+      antes.forEach((v, path) => { if (v === undefined) delete store[path]; else store[path] = v; });
+      const err = new Error("Sem espaço para guardar os dados."); err.code = "quota_exceeded"; throw err;
+    }
+    avisar();
+  }
   const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const snapDoc = (path) => {
     const v = store[path];
@@ -91,7 +105,7 @@
 
   window.localApp = {
     async use(nome) {
-      if (nome === "db") return store ? { doc: docRef, collection: colRef } : null;
+      if (nome === "db") return store ? { doc: docRef, collection: colRef, lote: async (ops) => gravarLote(ops) } : null;
       if (nome === "user") return { id: async () => "local" };
       if (nome === "downloads") return downloads;
       return null; // leitura de print com IA só existe no protótipo dentro do Claude

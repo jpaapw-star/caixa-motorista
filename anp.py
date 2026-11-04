@@ -307,7 +307,7 @@ def main():
             antigo = json.load(f)
     tem_hist = len(((antigo or {}).get("historico") or {}).get("semanas") or []) >= 6
     if antigo and antigo.get("semana") == semana:
-        if antigo.get("estados") == estados and antigo.get("municipios") == municipios and tem_hist:
+        if antigo.get("estados") == estados and antigo.get("municipios") == municipios and tem_hist and antigo.get("anterior"):
             print("Semana já gravada, nada mudou.")
             return
         novo["anterior"] = antigo.get("anterior")
@@ -315,6 +315,13 @@ def main():
         novo["anterior"] = {"semana": antigo.get("semana"), "estados": resumo(antigo["estados"]),
                             "municipios": resumo(antigo.get("municipios") or {})}
     novo["historico"] = juntar_historico(antigo, semana, estados, municipios, baixar_antigas=len(sys.argv) <= 1)
+    # sem a semana anterior guardada, ela sai do histórico (a última antes desta), para o app mostrar se subiu ou caiu
+    if not novo.get("anterior") and semana.get("fim"):
+        antes = [w for w in (novo["historico"].get("semanas") or []) if w.get("fim") and w["fim"] < semana["fim"]]
+        if antes:
+            w = max(antes, key=lambda x: x["fim"])
+            novo["anterior"] = {"semana": {"inicio": w.get("inicio"), "fim": w["fim"]},
+                                "estados": w.get("estados") or {}, "municipios": w.get("municipios") or {}}
     os.makedirs(os.path.dirname(SAIDA), exist_ok=True)
     with open(SAIDA, "w", encoding="utf-8") as f:
         json.dump(novo, f, ensure_ascii=False, separators=(",", ":"))

@@ -692,6 +692,52 @@ function abastMisturados({ T = 50, kg = 12, ke = 8.4, ordem, falta = {} }) {
   return L;
 }
 
+// Carro com GNV ou híbrido de tomada: parte dos km vai no cilindro ou na bateria, fora do tanque de líquido.
+// Cada trecho gasta q litros de gasolina (12 km/l) e v unidades do outro (GNV 14 km/m³, bateria 6 km/kWh).
+function abastComFora({ outro, k, semKm = false }) {
+  let km = 60000;
+  const L = [{ data: dia(-60), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 300, litros: 50, km, ts: 1 }];
+  for (let i = 0; i < 10; i++) {
+    const q = 50 * (0.5 + 0.07 * (i % 5)), v = (outro === "GNV" ? 5 : 8) + 3 * (i % 4);
+    km += Math.round(q * 12 + v * k);
+    const d = -57 + 5 * i;
+    // a carga em casa não tem KM e fica no meio do trecho; o GNV é na mesma parada, logo depois da gasolina
+    L.push({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: q * 6, litros: Math.round(q * 1000) / 1000, km, ts: 10 + 2 * i });
+    L.push({ data: dia(semKm ? d - 2 : d), tipo: "gasto", cat: "Combustível", comb: outro, cheio: true, valor: v * (outro === "GNV" ? 4.5 : 0.9), litros: v, km: semKm ? null : km, ts: 11 + 2 * i });
+  }
+  return L;
+}
+
+const mediaDe = async (m, c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
+
+test("carro com GNV: a média do GNV e a da gasolina saem separadas", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: abastComFora({ outro: "GNV", k: 14 }), carros: [{ id: "principal", tanque: 50, combustivel: "Flex + GNV" }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  // a conta puxa um pouco para o ponto de partida (GNV 1,2× a gasolina) enquanto há poucos tanques
+  await expect(m.locator("div", { hasText: "Média com gnv" })).toContainText("km/m³");
+  expect(Math.abs((await mediaDe(m, "gasolina")) - 12)).toBeLessThanOrEqual(0.15);
+  expect(Math.abs((await mediaDe(m, "gnv")) - 14)).toBeLessThanOrEqual(0.3);
+});
+
+test("híbrido de tomada: carga sem KM entra no trecho e a média do kWh sai separada", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: abastComFora({ outro: "Elétrico", k: 6, semKm: true }), carros: [{ id: "principal", tanque: 50, combustivel: "Híbrido de tomada" }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m.locator("div", { hasText: "Média com elétrico" })).toContainText("km/kWh");
+  expect(Math.abs((await mediaDe(m, "gasolina")) - 12)).toBeLessThanOrEqual(0.15);
+  expect(Math.abs((await mediaDe(m, "elétrico")) - 6)).toBeLessThanOrEqual(0.15);
+  // o lançamento oferece a carga e pede kWh
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Combustível"]');
+  await page.locator('[data-comb="Elétrico"]').click();
+  await expect(page.locator(".fld", { has: page.locator("#fLit") })).toContainText("kWh");
+  await expect(page.locator('[data-comb="Diesel"]')).toHaveCount(0);
+});
+
 test("tanques misturados: as duas médias saem da conta com a porcentagem de cada tanque", async ({ page }) => {
   // carro de verdade faz 12 km/l com gasolina e 8,4 com etanol; o motorista nunca roda um tanque puro
   const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"] });
@@ -726,7 +772,7 @@ test("gasolina e etanol na mesma parada contam como um abastecimento só", async
   const lista = page.locator("#tab-carro .mlist");
   await expect(lista).toContainText("junto");
   await expect(lista.locator(".fk")).not.toContainText(["40,0"]); // nenhum km/l de 40
-  await expect(lista.locator(".frow").filter({ hasText: "Etanol30,0 L" }).locator(".fk")).toContainText("10,0");
+  await expect(lista.locator(".frow").filter({ hasText: "120,00" }).locator(".fk")).toContainText("10,0");
 });
 
 test("parcial: o combustível que sobrou no tanque entra na mistura pelo KM rodado", async ({ page }) => {
@@ -738,7 +784,10 @@ test("parcial: o combustível que sobrou no tanque entra na mistura pelo KM roda
   await aba(page, "carro");
   await parte(page, "consumo");
   // o trecho rodou 252 km com 100% de etanol e 150 km com 67%: 88% no total (com a conta antiga, 93%)
-  await expect(page.locator("#tab-carro .frow").first()).toContainText("rodou com 88% de etanol");
+  // a lista mostra só data, combustível, km/l e valor; o resto aparece ao tocar
+  await expect(page.locator("#tab-carro .frow").first()).not.toContainText("KM ");
+  await page.locator("#tab-carro .frow").first().click();
+  await expect(page.locator("#fInfo")).toContainText("rodou com 88% de etanol");
 });
 
 test("parcial sem KM: a mistura do trecho fica incerta e não entra na conta de gasolina e etanol", async ({ page }) => {
@@ -818,8 +867,8 @@ test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) =
   await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
 });
 
-test("ganho por km divide só o ganho dos dias com KM anotado", async ({ page }) => {
-  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem KM. Antes: R$ 200 ÷ 100 km = R$ 2/km.
+test("lucro por dia conta os dias trabalhados", async ({ page }) => {
+  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem KM (o ganho por km agora fica no cartão "Cada km rodado")
   const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
   await page.clock.setFixedTime(base);
   const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
@@ -829,7 +878,7 @@ test("ganho por km divide só o ganho dos dias com KM anotado", async ({ page })
   }));
   await page.click("#trabMais");
   const q = page.locator("#tab-inicio .metrics").first();
-  await expect(q.locator("div", { hasText: /^Ganho por km/ }).first()).toContainText("R$ 1,00");
+  await expect(q).not.toContainText(/^Ganho por km/);
   await expect(q.locator("div", { hasText: "Lucro por dia" })).toContainText("R$ 100,00"); // 2 dias trabalhados
 });
 
@@ -1129,4 +1178,61 @@ test("postos ordenados pelo custo por km, com o quanto cada um rende", async ({ 
   await expect(card.locator(".split").first()).toContainText("Posto A");
   await expect(card.locator(".split").first()).toContainText("melhor por km");
   await expect(card).toContainText(/rende \d+% menos/);
+});
+
+test("Hoje: ganhou / gastou aparece só em dia de trabalho", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "gasto", cat: "Lavagem", valor: 40, ts: 1 }] }));
+  await expect(page.locator("#tab-inicio .hoje")).toHaveCount(0);
+});
+
+test("Hoje: ganhou / gastou aparece no dia em que trabalhou", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "gasto", cat: "Lavagem", valor: 40, ts: 1 }, { data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 150, ts: 2 }] }));
+  await expect(page.locator("#tab-inicio .hoje")).toContainText("gastou");
+});
+
+// ---------- ideias automáticas do Início e do Resumo ----------
+// 70 dias rodando 50 km por dia (menos domingo), R$ 200 por dia e um tanque de gasolina por semana
+function meses70(base) {
+  const d = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10), L = [];
+  let km = 50000;
+  for (let n = -70; n <= -1; n++) {
+    if (new Date(base + n * 864e5).getUTCDay() === 0) continue;
+    km += 50;
+    L.push({ data: d(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: 200, ts: 1000 + n });
+    if (n % 7 === 0) L.push({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, litros: 25, valor: 150, km, ts: 2000 + n });
+  }
+  return L;
+}
+
+test("Início mostra quanto cada km dá, custa e sobra, e o lucro previsto do mês", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  await page.clock.setFixedTime(base);
+  await abrir(page, dados({ lancamentos: meses70(base), carros: [{ id: "principal", tanque: 50, combustivel: "Flex" }] }));
+  const kv = page.locator("#tab-inicio .card", { hasText: "Cada km rodado" });
+  await expect(kv).toContainText("te dá");
+  await expect(kv).toContainText("custa");
+  await expect(kv).toContainText("sobra");
+  await expect(kv).toContainText("dá prejuízo");
+  await expect(page.locator(".placa-prev")).toContainText("Se continuar assim, fecha");
+});
+
+test("Resumo mostra o melhor e o pior dia da semana pelos ganhos", async ({ page }) => {
+  const L = [];
+  for (let n = -84; n <= -1; n++) {
+    const w = new Date(dia(n) + "T12:00:00Z").getUTCDay();
+    if (w === 0) continue;
+    L.push({ data: dia(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: w === 6 ? 300 : w === 1 ? 180 : 220, ts: 100 + n });
+  }
+  await abrir(page, dados({ lancamentos: L }));
+  await aba(page, "resumo");
+  const c = page.locator("#tab-resumo .card", { hasText: "Dias da semana" });
+  await expect(c).toContainText("Sábado rende mais: R$ 300,00");
+  await expect(c).toContainText("Segunda rende menos: R$ 180,00");
+});
+
+test("avisa quando o combustível mais barato por km muda", async ({ page }) => {
+  const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"] });
+  L.forEach((x) => { if (x.comb === "Etanol") x.valor = x.litros * 3; }); // etanol a R$ 3: sai mais barato por km
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }, { melhorComb: { principal: { comb: "Gasolina", desde: dia(-30), antes: null } } }));
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Agora o etanol compensa" })).toContainText("mais barato por km que a gasolina");
 });

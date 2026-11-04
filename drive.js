@@ -45,7 +45,7 @@
           guardar();
           ok();
         },
-        error_callback: (e) => falha(erro(e && e.type === "popup_closed" ? "cancelado" : "login")),
+        error_callback: (e) => falha(erro(e && e.type === "popup_closed" ? "cancelado" : e && e.type === "popup_failed_to_open" ? "janela_bloqueada" : "login")),
       });
       cliente.requestAccessToken();
     });
@@ -73,6 +73,12 @@
     return arquivoId;
   }
 
+  // o iPhone só abre a janela do Google logo depois do toque: o script do Google já fica carregado antes,
+  // para o primeiro "Salvar no Google" não esperar a internet e ter a janela bloqueada
+  if (!conectado()) {
+    const pre = () => carregarGoogle().catch(() => {});
+    if (document.readyState === "complete") setTimeout(pre, 3000); else addEventListener("load", () => setTimeout(pre, 3000));
+  }
   window.googleDrive = {
     conectado,
     // grava a cópia (texto JSON); devolve a data da gravação
