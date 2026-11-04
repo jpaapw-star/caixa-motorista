@@ -600,7 +600,7 @@ test("Trabalho no mês mostra só o essencial e abre o resto ao tocar no título
   const quadro = page.locator("#tab-inicio .metrics").first();
   await expect(quadro).not.toContainText("Ganho por hora");
   await expect(page.locator("#jorIni")).toHaveCount(0); // sem o botão "Começar a trabalhar"
-  await expect(quadro).toContainText("Ganhos nos apps");
+  await expect(quadro).not.toContainText("Ganhos nos apps"); // já aparece em "Ganhos" no topo
   await expect(quadro).toContainText("Previsão do mês");
   await expect(quadro).not.toContainText("Lucro por dia");
   await expect(quadro).not.toContainText("Km rodados vazio");
@@ -899,7 +899,7 @@ test("mistura atual do tanque: tanque cheio guarda o que já estava lá (exemplo
   await expect(tq).toContainText("30,0 L");
   await expect(tq).toContainText("40%"); // etanol 20 L
   await expect(tq).toContainText("20,0 L");
-  await expect(tq).toContainText("50 L estimados de 50 L");
+  await expect(tq).toContainText(/Vazio\s*0%/i);
   await expect(tq).toContainText("confiança alta");
 });
 
@@ -1040,6 +1040,7 @@ test("mistura do tanque mostra o álcool total, contando o etanol da gasolina", 
   await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, 312.5), ab(-1, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
   // 20 L de etanol + 30% dos 30 L de gasolina = 29 L de 50: 58%
   await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText("Álcool no tanque: 58%");
+  await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText(/Vazio\s*0%\s*0,0 L/i);
 });
 
 test("parcial sem KM: os km saem dos dias e a mistura continua com confiança média", async ({ page }) => {
@@ -1050,6 +1051,9 @@ test("parcial sem KM: os km saem dos dias e a mistura continua com confiança m�
   await expect(tq).toContainText("confiança média");
   await expect(tq).toContainText("%");
   await expect(tq).not.toContainText("não confiável");
+  await expect(tq).toContainText("Para melhorar a confiança:");
+  await expect(tq).toContainText("anote o KM");
+  await expect(tq).toContainText("Vazio");
 });
 
 test("o que já estava no tanque antes do primeiro registro é estimado pelo consumo", async ({ page }) => {
