@@ -1013,3 +1013,69 @@ test("previsão do mês segue a época do ano", async ({ page }) => {
   await abrir(page, dados({ lancamentos: L }));
   await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/época \+\d+%/);
 });
+
+test("previsão do mês usa o preço do posto de costume", async ({ page }) => {
+  const { base, d15 } = dia15(page);
+  await page.clock.setFixedTime(base);
+  // 3 tanques no Shell Centro a R$ 6,00 e o último num posto de estrada a R$ 6,60: o resto do mês vai pelo Shell
+  const L = [-31, -21, -11, -1].map((d, i) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, posto: i < 3 ? "Shell Centro" : "Posto Estrada", valor: i < 3 ? 240 : 264, litros: 40, km: 10000 + 480 * i, ts: 100 + i }));
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 40 }] }));
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText("preço −9%");
+});
+
+test("Resumo mostra quanto a previsão acertou nos meses que passaram", async ({ page }) => {
+  const { base, d15, prevYm } = dia15(page);
+  await page.clock.setFixedTime(base);
+  const prevHist = { [prevYm]: [[5, 50, 600, 650], [15, 100, 300, 420]] };
+  const L = [{ data: d15(-20), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 500, litros: 80, km: 10000, ts: 1 }];
+  await abrir(page, dados({ lancamentos: L }, { prevHist }));
+  await aba(page, "resumo");
+  const card = page.locator(".card", { hasText: "Acerto da previsão" });
+  await expect(card).toContainText("no dia 15");
+  await expect(card).toContainText("−16%"); // previu R$ 420, foram R$ 500
+});
+
+test("mistura do tanque mostra o álcool total, contando o etanol da gasolina", async ({ page }) => {
+  const ab = (d, km, comb, litros, valor) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, 312.5), ab(-1, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
+  // 20 L de etanol + 30% dos 30 L de gasolina = 29 L de 50: 58%
+  await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText("Álcool no tanque: 58%");
+});
+
+test("parcial sem KM: os km saem dos dias e a mistura continua com confiança média", async ({ page }) => {
+  const ab = (d, km, comb, litros, cheio) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor: litros * 5, litros, km, ts: 100 + d });
+  // 50 km por dia; o parcial de etanol 8 dias depois do último KM não tem KM
+  await abrir(page, dados({ lancamentos: [ab(-20, 10000, "Gasolina", 50, true), ab(-10, 10500, "Gasolina", 40, true), ab(-2, null, "Etanol", 20, false)], carros: [{ id: "principal", tanque: 50 }] }));
+  const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  await expect(tq).toContainText("confiança média");
+  await expect(tq).toContainText("%");
+  await expect(tq).not.toContainText("não confiável");
+});
+
+test("o que já estava no tanque antes do primeiro registro é estimado pelo consumo", async ({ page }) => {
+  // de verdade: 45 L de etanol no tanque antes do primeiro registro; gasolina rende 12 km/l e etanol 8 km/l.
+  // Cada abastecimento repõe os 5 L gastos, em blocos de 5 com etanol e 5 com gasolina.
+  const tq = { G: 5, E: 45 }, L = [];
+  let km = 10000;
+  const n = 26;
+  for (let i = 0; i <= n; i++) {
+    const comb = i === 0 ? "Gasolina" : Math.floor((i - 1) / 5) % 2 ? "Gasolina" : "Etanol";
+    if (i > 0) {
+      const tot = tq.G + tq.E, g = tq.G / tot;
+      km += 5 * (g * 12 + (1 - g) * 8);
+      tq.G -= 5 * g; tq.E -= 5 * (1 - g);
+      if (comb === "Gasolina") tq.G += 5; else tq.E += 5;
+    }
+    L.push({ data: dia(i - n - 1), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor: 25, litros: 5, km: Math.round(km * 10) / 10, ts: 100 + i });
+  }
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }));
+  const card = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  await expect(card).toContainText("estimado pelo consumo");
+  // de verdade: etanol = tq.E de 50 L
+  const pe = Math.round((tq.E / 50) * 100);
+  const txt = await card.innerText();
+  const m = txt.match(/Etanol\s+(\d+)%/i);
+  // sem a correção daria 54% (a parte desconhecida seguiria a mistura conhecida); com ela fica mais perto dos 60%
+  expect(Number(m[1])).toBeGreaterThan(54);
+  expect(Math.abs(Number(m[1]) - pe)).toBeLessThanOrEqual(5);
+});
