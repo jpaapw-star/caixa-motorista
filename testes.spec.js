@@ -600,7 +600,7 @@ test("Trabalho no mês mostra só o essencial e abre o resto ao tocar no título
   const quadro = page.locator("#tab-inicio .metrics").first();
   await expect(quadro).not.toContainText("Ganho por hora");
   await expect(page.locator("#jorIni")).toHaveCount(0); // sem o botão "Começar a trabalhar"
-  await expect(quadro).toContainText("Ganhos nos apps");
+  await expect(quadro).not.toContainText("Ganhos nos apps"); // já aparece em "Ganhos" no topo
   await expect(quadro).toContainText("Previsão do mês");
   await expect(quadro).not.toContainText("Lucro por dia");
   await expect(quadro).not.toContainText("Km rodados vazio");
@@ -899,7 +899,7 @@ test("mistura atual do tanque: tanque cheio guarda o que já estava lá (exemplo
   await expect(tq).toContainText("30,0 L");
   await expect(tq).toContainText("40%"); // etanol 20 L
   await expect(tq).toContainText("20,0 L");
-  await expect(tq).toContainText("50 L estimados de 50 L");
+  await expect(tq).toContainText(/Vazio\s*0%/i);
   await expect(tq).toContainText("confiança alta");
 });
 
