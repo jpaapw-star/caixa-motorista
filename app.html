@@ -762,8 +762,20 @@ td { padding: 10px 6px; }
     if (new Set(w.map((x) => x.d)).size < 2) w = r;
     // soma só os trechos possíveis entre um KM anotado e o seguinte: um KM digitado errado (salto de milhares
     // de km ou KM que volta) fica de fora, em vez de inflar a média e a previsão
-    const { km: kmR, dias } = trechosKm(w);
-    if (dias >= 3 && kmR > 0) { const kmDia = kmR / dias; return { kmDia, kmMes: kmDia * 30.44, fonte: "pelos seus registros", dias: Math.round(dias), poucos: dias < 14 }; }
+    const { km: kmR, dias, cadeia } = trechosKm(w);
+    if (dias >= 3 && kmR > 0) {
+      // cada trecho entre dois KM pesa pelos dias dele, e o peso cai pela metade a cada 30 dias de idade:
+      // se você passou a rodar mais ou menos nas últimas semanas, a média acompanha logo
+      const t = (x) => new Date(x + "T12:00").getTime() / 864e5, agora = t(today());
+      let wk = 0, wd = 0;
+      for (let i = 1; i < cadeia.length; i++) {
+        const a = cadeia[i - 1], b = cadeia[i], dd = t(b.d) - t(a.d);
+        const peso = 0.5 ** (Math.max(0, agora - (t(a.d) + t(b.d)) / 2) / 30);
+        wk += (b.k - a.k) * peso; wd += dd * peso;
+      }
+      const kmDia = wd > 0 ? wk / wd : kmR / dias;
+      return { kmDia, kmMes: kmDia * 30.44, fonte: "pelos seus registros", dias: Math.round(dias), poucos: dias < 14 };
+    }
     const c = car.custos || {};
     const est = Number(c.kmDia) > 0 ? Number(c.kmDia) : 0;
     return est > 0 ? { kmDia: est, kmMes: est * 30.44, fonte: "pela sua estimativa", estimativa: true } : null;
@@ -821,8 +833,9 @@ td { padding: 10px 6px; }
       if (meses >= 0.5) gapsMes.push(meses);
       if (a.km > 0 && b.km > a.km) gapsKm.push(b.km - a.km);
     }
-    const media = (arr) => (arr.length ? arr.reduce((x, y) => x + y, 0) / arr.length : null);
-    return { H, ult: H[H.length - 1] || null, custoMedio: pagos.length ? sum(pagos) / pagos.length : null, nPagos: pagos.length, cadaMeses: media(gapsMes), cadaKm: media(gapsKm), n: H.length };
+    // valor do meio (mediana): uma troca muito atrasada ou adiantada não puxa o intervalo
+    const mediana = (arr) => { if (!arr.length) return null; const o = arr.slice().sort((x, y) => x - y), k = o.length >> 1; return o.length % 2 ? o[k] : (o[k - 1] + o[k]) / 2; };
+    return { H, ult: H[H.length - 1] || null, custoMedio: pagos.length ? sum(pagos) / pagos.length : null, nPagos: pagos.length, cadaMeses: mediana(gapsMes), cadaKm: mediana(gapsKm), n: H.length };
   }
   // O serviço como o app usa: última troca e intervalo vêm do histórico quando existem;
   // os valores cadastrados ficam só como ponto de partida.
@@ -862,6 +875,7 @@ td { padding: 10px 6px; }
   // Caixinha por metas: cada gasto futuro do carro tem um valor e uma data.
   // Guardar por mês = (valor − o que já está guardado para ele) ÷ meses até a data.
   // O saldo da caixinha vai primeiro para o gasto que vence antes.
+  const INFLACAO_ANO = 1.05;
   function previsao() {
     const MES_MS = 30.44 * 864e5;
     const hoje0 = new Date(); hoje0.setHours(0, 0, 0, 0);
@@ -890,7 +904,10 @@ td { padding: 10px 6px; }
           } else { if (m.cadaKm > 0) semKm++; continue; }
         }
         if (cs.fonte === "estimado") estimados++;
-        metas.push({ id: m0.id, tipo: "manut", nome: m0.servico + suf, valor: cs.v, data: prox, fonte: cs.fonte, origem });
+        // preço de hoje corrigido por uns 5% ao ano até a data da troca (peças e serviço sobem com a inflação)
+        const anos = Math.max(0, (prox - hoje0) / (365.25 * 864e5));
+        const valor = Math.round(cs.v * INFLACAO_ANO ** anos * 100) / 100;
+        metas.push({ id: m0.id, tipo: "manut", nome: m0.servico + suf, valor, hoje: cs.v, inflado: valor - cs.v >= 1, data: prox, fonte: cs.fonte, origem });
       }
       for (const [nome, v, re] of [["IPVA", c.ipvaAno, /ipva/i], ["Licenciamento", c.licAno, /licenciamento|crlv/i], ["Seguro", c.seguroAno, /seguro/i]]) {
         if (!(Number(v) > 0)) continue;
@@ -992,11 +1009,11 @@ td { padding: 10px 6px; }
       <div class="metrics">
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
-          const atual = S.ym === ymNow(), cd = rc.cd, prev = atual && cd.combDia > 0 ? s.comb + cd.combDia * (N - new Date().getDate()) : null;
+          const atual = S.ym === ymNow(), cd = rc.cd, dr = atual ? diasRestantesMes() : 0, prev = atual && cd.combDia > 0 ? s.comb + cd.combDia * dr : null;
           const cm = {}; s.L.filter((x) => x.cat === "Combustível").forEach((x) => { const c = x.comb || "Outro"; cm[c] = (cm[c] || 0) + (Number(x.valor) || 0); });
           const combMes = Object.entries(cm).sort((a, b) => b[1] - a[1]);
           return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : "Qual compensa colocar?"}</span></button>
-          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (Object.keys(cd.porComb).length > 1 ? Object.entries(cd.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v * (N - new Date().getDate()))).join(" · ") : "gasto até hoje + " + brl(cd.combDia) + " por dia") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
+          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (Object.keys(cd.porComb).length > 1 ? Object.entries(cd.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v * dr)).join(" · ") : "gasto até hoje + " + brl(cd.combDia) + " por dia") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
         <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
         ${trabAberto ? extras.join("") : ""}
@@ -1374,6 +1391,27 @@ td { padding: 10px 6px; }
     const nome = combPadrao(car.id);
     return { v: pm / fd.media, porComb: { [nome]: pm / fd.media }, nome };
   }
+  // Dias que faltam no mês, contados pelo seu costume: pelas últimas 8 semanas, a chance de você rodar em cada dia
+  // da semana (dia com dia de trabalho, ganho dos apps ou KM anotado). Quem não roda no domingo não tem gasto
+  // previsto nos domingos. A soma vem em "dias médios", para multiplicar pelo gasto médio por dia.
+  // Com menos de 3 semanas de registros, conta todos os dias.
+  function diasRestantesMes() {
+    const h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate(), rest = N - h.getDate();
+    const lim = dStr(new Date(Date.now() - 56 * 864e5));
+    const ativos = new Set([
+      ...S.dias.map((d) => d.data),
+      ...S.lanc.filter((x) => (x.tipo === "ganho" && x.trabalho) || x.km > 0).map((x) => x.data),
+    ].filter((d) => d && d >= lim && d < today()));
+    const prim = [...ativos].sort()[0];
+    if (!prim || (Date.now() - new Date(prim + "T12:00")) / 864e5 < 21 || ativos.size < 6) return rest;
+    const tem = Array(7).fill(0), tot = Array(7).fill(0);
+    for (let d = new Date(prim + "T12:00"); dStr(d) < today(); d.setDate(d.getDate() + 1)) { tot[d.getDay()]++; if (ativos.has(dStr(d))) tem[d.getDay()]++; }
+    const fr = tot.map((n, i) => (n ? tem[i] / n : 0)), media = fr.reduce((a, b) => a + b, 0) / 7;
+    if (!(media > 0)) return rest;
+    let soma = 0;
+    for (let i = 1; i <= rest; i++) soma += fr[new Date(h.getFullYear(), h.getMonth(), h.getDate() + i).getDay()] / media;
+    return soma;
+  }
   function custoDiario() {
     const DM = 30.44;
     let comb = 0, fixos = 0, combNome = "", kmDiaTot = 0;
@@ -1573,7 +1611,7 @@ td { padding: 10px 6px; }
         <div class="card"><div class="sec-h"><h2>Para onde vai a caixinha</h2><small>valor ÷ meses até precisar</small></div>
           ${pv.metas.length ? `<div class="mlist">${pv.metas.map((t) => `<button class="meta-row" ${t.tipo === "manut" ? `data-meta="${esc(t.id)}"` : `data-metafixo="1"`}>
               <div class="split"><b>${esc(t.nome)}</b><b class="num">${brl(t.mensal)}<small> /mês</small></b></div>
-              <div class="split"><small>${brl(t.valor)} ${t.vencido ? "· vencido, precisa agora" : "em " + mesAno(t.data) + " · " + t.meses + (t.meses === 1 ? " mês" : " meses")}${t.fonte === "estimado" ? " · valor estimado" : t.fonte === "média paga" ? " · média do que você pagou" : ""}</small><small>${t.guardado > 0 ? "já tem " + brl(t.guardado) : ""}</small></div>
+              <div class="split"><small>${brl(t.valor)} ${t.vencido ? "· vencido, precisa agora" : "em " + mesAno(t.data) + " · " + t.meses + (t.meses === 1 ? " mês" : " meses")}${t.fonte === "estimado" ? " · valor estimado" : t.fonte === "média paga" ? " · média do que você pagou" : ""}${t.inflado ? " · hoje " + brl(t.hoje) + ", com inflação" : ""}</small><small>${t.guardado > 0 ? "já tem " + brl(t.guardado) : ""}</small></div>
               <div class="track"><i style="width:${Math.min(100, (t.guardado / t.valor) * 100)}%"></i></div>
             </button>`).join("")}</div>`
           : `<p class="note" style="margin:0">Nenhum gasto previsto ainda. Cadastre serviços em Manutenção ou os custos fixos.</p>`}
@@ -2390,6 +2428,7 @@ td { padding: 10px 6px; }
     { v: 7, data: "2026-11-04", itens: [
       "Início mais limpo: saíram o botão \"Começar a trabalhar\", o ganho por hora e o lucro por hora.",
       "Com uma janela aberta, a tela de trás não rola mais junto.",
+      "Km por dia dá mais peso às últimas semanas; a previsão do combustível do mês conta só os dias da semana em que você costuma rodar; trocas usam o intervalo do meio (mediana) e a caixinha soma uns 5% ao ano de inflação no preço delas.",
       "Contas mais certas: ganho por km e por corrida usam só os dias em que você anotou KM e corridas; combustível por km usa o preço de hoje e conta o etanol pelos km que ele rende; manutenção por km vem da sua lista de serviços; km do mês divide a virada do mês e ignora KM digitado errado; postos mostram o preço mais recente.",
     ] },
     { v: 6, data: "2026-11-03", itens: [

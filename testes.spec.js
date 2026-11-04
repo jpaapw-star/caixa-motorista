@@ -201,24 +201,25 @@ test("consumo por litro e qual combustível colocar", async ({ page }) => {
   await expect(page.locator(".calc-out .cmp-out b").first()).toHaveText("Gasolina");
 });
 
-test("caixinha: pneus de R$ 1.000 daqui a 2 anos = R$ 41,67 por mês, e separar mais não conta duas vezes", async ({ page }) => {
+test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = R$ 45,94 por mês, e separar mais não conta duas vezes", async ({ page }) => {
   await abrir(page, dados({ manutencao: [{ servico: "Troca de pneus", custo: 1000, proxData: emMeses(24), cadaKm: 40000, cadaMeses: 60 }] }));
   await aba(page, "carro");
   await parte(page, "custos");
   const pneus = page.locator(".meta-row", { hasText: "Troca de pneus" }); // a linha dos pneus, não o texto de exemplo
   const total = page.locator(".card", { hasText: "Caixinha do carro" }).locator(".custo-hero b.big");
-  await expect(pneus).toContainText("R$ 41,67 /mês");
+  await expect(pneus).toContainText("R$ 45,94 /mês");
   await expect(pneus).toContainText("24 meses");
-  await expect(total).toContainText("R$ 41,67");
+  await expect(pneus).toContainText("hoje R$ 1.000,00, com inflação"); // 1.000 × 1,05² = 1.102,50 ÷ 24 meses
+  await expect(total).toContainText("R$ 45,94");
   await aba(page, "inicio");
   await page.click("#addSep");
   await page.fill("#sV", "50");
   await page.click("#fSave");
   await expect(page.locator("#sheet")).toBeHidden();
   await aba(page, "carro");
-  await expect(pneus).toContainText("R$ 41,67 /mês"); // o que foi separado neste mês vai para a meta do mês
+  await expect(pneus).toContainText("R$ 45,94 /mês"); // o que foi separado neste mês vai para a meta do mês
   await expect(pneus).toContainText("já tem R$ 50,00");
-  await expect(total).toContainText("R$ 41,67");
+  await expect(total).toContainText("R$ 45,94");
 });
 
 test("Tabela FIPE: valor do carro e quanto ele perde por ano", async ({ page }) => {
@@ -845,4 +846,12 @@ test("custo por km da manutenção vem da lista de serviços, não de uma troca 
   await aba(page, "carro");
   await parte(page, "custos");
   await expect(page.locator(".bar-row", { hasText: "Manutenção, pneus e lavagem" })).toContainText("R$ 0,03/km"); // R$ 300 ÷ 10.000 km
+});
+
+test("km por dia dá mais peso às últimas semanas", async ({ page }) => {
+  const lav = (d, km) => ({ data: dia(d), tipo: "gasto", cat: "Lavagem", valor: 30, km, ts: 100 + d });
+  // 100 km por dia no mês retrasado e 20 km por dia no último mês: a média simples daria 60, a nova fica perto dos 20
+  await abrir(page, dados({ lancamentos: [lav(-60, 10000), lav(-30, 13000), lav(0, 13600)] }));
+  await aba(page, "carro");
+  await expect(page.locator("#tab-carro .odo-ritmo")).toContainText("47 km por dia");
 });
