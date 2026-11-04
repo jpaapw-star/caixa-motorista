@@ -1079,3 +1079,50 @@ test("o que já estava no tanque antes do primeiro registro é estimado pelo con
   expect(Number(m[1])).toBeGreaterThan(54);
   expect(Math.abs(Number(m[1]) - pe)).toBeLessThanOrEqual(5);
 });
+
+test("Consumo mostra o gasto pelo que foi queimado e quanto economizou", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  await page.clock.setFixedTime(base);
+  const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  const ab = (d, km, comb, valor, litros) => ({ data: d20(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  // 960 km com gasolina (12 km/l, R$ 6,25) e 640 km com etanol (8 km/l, R$ 4,00): ~80 L de cada, ~R$ 820
+  await abrir(page, dados({ lancamentos: [ab(-12, 40000, "Gasolina", 250, 40), ab(-9, 40480, "Etanol", 160, 40), ab(-6, 40800, "Gasolina", 250, 40), ab(-3, 41280, "Etanol", 160, 40), ab(0, 41600, "Gasolina", 250, 40)], carros: [{ id: "principal", tanque: 40 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m).toContainText(/Queimou em [a-zç]+\s*R\$\s8\d\d,\d\d/i);
+  await expect(m).toContainText(/gasolina R\$\s[\d.,]+ · etanol R\$\s[\d.,]+/);
+  await expect(m).toContainText(/(Economizou|Gastou a mais) em/i);
+});
+
+test("tanque que rendeu bem menos que o normal vira aviso", async ({ page }) => {
+  const L = [];
+  let km = 10000;
+  for (let i = 0; i <= 6; i++) {
+    if (i > 0) km += i === 6 ? 400 : 480; // o último tanque fez 10 km/l, os outros 12
+    L.push({ data: dia(-35 + 5 * i), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, posto: i === 5 ? "Posto Estrada" : "Shell Centro", ts: 100 + i });
+  }
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 40 }] }));
+  const a = page.locator("#tab-inicio .alert", { hasText: "Rendimento caiu" });
+  await expect(a).toContainText("abaixo do normal");
+  await expect(a).toContainText("Posto Estrada");
+});
+
+test("postos ordenados pelo custo por km, com o quanto cada um rende", async ({ page }) => {
+  // Posto A: R$ 6,00 e 12 km/l. Posto B: R$ 5,80 mas 10,5 km/l. Por km, o A sai mais barato.
+  const L = [];
+  let km = 10000;
+  for (let i = 0; i <= 6; i++) {
+    const posto = i % 2 ? "Posto B" : "Posto A";
+    if (i > 0) km += (i - 1) % 2 ? 420 : 480; // o trecho rende pelo posto do abastecimento que o abriu
+    L.push({ data: dia(-35 + 5 * i), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: posto === "Posto A" ? 240 : 232, litros: 40, km, posto, ts: 100 + i });
+  }
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 40 }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const card = page.locator(".card", { hasText: "Postos" });
+  await expect(card).toContainText("pelo custo por km");
+  await expect(card.locator(".split").first()).toContainText("Posto A");
+  await expect(card.locator(".split").first()).toContainText("melhor por km");
+  await expect(card).toContainText(/rende \d+% menos/);
+});

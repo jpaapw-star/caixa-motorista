@@ -1021,6 +1021,9 @@ td { padding: 10px 6px; }
         if (ex) alertas.push({ nome: "Confira um abastecimento" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify({ t: "lanc", id: ex.id }),
           txt: `Em ${dBR(ex.data).slice(0, 5)} entraram ${num(ex.excede, 1)} L, mais que o tanque de ${num(c.tanque)} L. Confira os litros ou o tamanho do tanque em Editar carro.` });
       }
+      const rq = rendimentoCaiu(c);
+      if (rq) alertas.push({ nome: "Rendimento caiu" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Ver", tab: "carro", sub: "consumo", car: c.id,
+        txt: `O tanque de ${dBR(rq.data).slice(0, 5)} fez ${num(rq.kml, 1)} km/l, ${num(rq.queda * 100)}% abaixo do normal (${num(rq.esp, 1)}). Confira a calibragem dos pneus${rq.posto ? " e o combustível do " + rq.posto : " e o combustível"}.` });
       const sus = kmParaConferir(c.id);
       if (!sus.length) return;
       const { de, para, dd } = sus[sus.length - 1];
@@ -1488,6 +1491,77 @@ td { padding: 10px 6px; }
     if (!pm) return null;
     const nome = combPadrao(car.id);
     return { v: pm / fd.media, porComb: { [nome]: pm / fd.media }, nome, kmL: fd.media };
+  }
+  // ----- gasto pelo que foi queimado -----
+  // Cada pedaço de km entre dois abastecimentos com KM roda com a mistura que ficou no tanque depois do primeiro
+  // (depois do último abastecimento, até o último KM). Os km de cada pedaço dentro do mês (KM interpolado na virada)
+  // viram litros de cada combustível: km × fração do combustível ÷ km/l da mistura (fração × km/l de cada um).
+  // Cada litro vale a média dos 3 últimos preços pagos daquele combustível até o fim do mês.
+  function queimadoMes(car, ym) {
+    const fd = fuelData(car.id), cad = cadeiaKm(car.id);
+    if (cad.length < 2) return null;
+    const ini = ym + "-01", fim = dStr(addMonths(ini, 1));
+    const kI = kmNaData(cad, ini), kF = kmNaData(cad, fim);
+    if (!(kF > kI)) return null;
+    const cadSet = new Set(cad.map((p) => p.d + "|" + p.k));
+    const fills = fd.all.filter((f) => f.litros > 0 && f.comb && f.km > 0 && f.mixApos && cadSet.has(f.data + "|" + Number(f.km)));
+    const kmlMix = (m) => Object.entries(m).reduce((a, [c, v]) => a + v * (fd.kmlPor[c] || fd.media || 0), 0);
+    const preco = (c) => { const r = fd.all.filter((f) => f.comb === c && f.preco > 0 && f.data < fim).slice(-3); return r.length ? r.reduce((a, f) => a + f.preco, 0) / r.length : null; };
+    const out = {};
+    let km = 0;
+    fills.forEach((f, i) => {
+      const a = Number(f.km), b = i + 1 < fills.length ? Number(fills[i + 1].km) : cad[cad.length - 1].k;
+      const dentro = Math.max(0, Math.min(b, kF) - Math.max(a, kI)), k = kmlMix(f.mixApos);
+      if (!(dentro > 0) || !(k > 0)) return;
+      km += dentro;
+      for (const [c, v] of Object.entries(f.mixApos)) {
+        if (!(v > 0.001)) continue;
+        const o = out[c] || (out[c] = { l: 0, v: 0, p: preco(c) });
+        o.l += (dentro * v) / k;
+      }
+    });
+    if (!(km > 0) || Object.values(out).some((o) => !o.p)) return null;
+    Object.values(out).forEach((o) => { o.v = o.l * o.p; });
+    const total = Object.values(out).reduce((a, o) => a + o.v, 0);
+    // quanto custaria rodar os mesmos km só com o combustível que você menos usou (preço dele ÷ km/l dele)
+    let eco = null;
+    const usados = Object.keys(out).filter((c) => c === "Gasolina" || c === "Etanol");
+    const outro = usados.length === 2 ? usados.sort((x, y) => out[x].l - out[y].l)[0] : usados.length === 1 ? (usados[0] === "Gasolina" ? "Etanol" : "Gasolina") : null;
+    const pOutro = outro && (preco(outro) || (out[outro] && out[outro].p));
+    if (outro && pOutro && fd.kmlPor[outro] && (car.combustivel || "Flex") === "Flex") eco = { outro, valor: (km * pOutro) / fd.kmlPor[outro] - total };
+    return { km, porComb: out, total, eco };
+  }
+  // ----- rendimento caindo -----
+  // O último tanque (dos últimos 30 dias) rendeu 10% ou mais abaixo do esperado para a mistura dele
+  // (fração × km/l de cada combustível; sem as duas médias, a mediana dos 5 tanques anteriores).
+  // Precisa de 4 tanques com mistura conhecida.
+  function rendimentoCaiu(car) {
+    const fd = fuelData(car.id), tr = fd.trechos.filter((f) => f.mix && !f.mixIncerto);
+    if (tr.length < 4) return null;
+    const u = tr[tr.length - 1];
+    if (u.data < dStr(new Date(Date.now() - 30 * 864e5))) return null;
+    const temTodas = Object.keys(u.mix).every((c) => fd.kmlPor[c]);
+    let esp = temTodas ? Object.entries(u.mix).reduce((a, [c, v]) => a + v * fd.kmlPor[c], 0) : null;
+    if (!(esp > 0)) { const ant = tr.slice(-6, -1).map((f) => f.kml).sort((a, b) => a - b); esp = ant[ant.length >> 1]; }
+    const queda = 1 - u.kml / esp;
+    if (!(queda >= 0.1)) return null;
+    const ini = fd.all.filter((f) => Number(f.km) === Number(u.kmIni) && f.litros > 0).pop();
+    return { queda, kml: u.kml, esp, data: u.data, posto: ini && ini.posto ? String(ini.posto).trim() : null, id: u.id };
+  }
+  // ----- postos pelo rendimento -----
+  // Cada tanque cheio foi abastecido no posto do abastecimento que abriu o trecho. Rendimento do posto =
+  // média de (km/l do trecho ÷ km/l esperado para a mistura do trecho). Com 2 tanques ou mais, o custo por km
+  // do posto = preço do litro ÷ (km/l do combustível × rendimento do posto).
+  function rendPostos(car) {
+    const fd = fuelData(car.id), por = {};
+    fd.trechos.filter((f) => f.mix && !f.mixIncerto && f.combTrecho).forEach((f) => {
+      const e = fd.kmlPor[f.combTrecho] || fd.media;
+      const ini = fd.all.filter((x) => Number(x.km) === Number(f.kmIni) && x.litros > 0 && x.comb === f.combTrecho).pop();
+      if (!e || !ini || !ini.posto) return;
+      const k = f.combTrecho + "|" + String(ini.posto).trim().toLowerCase(), m = por[k] || (por[k] = { s: 0, n: 0 });
+      m.s += f.kml / e; m.n++;
+    });
+    return Object.fromEntries(Object.entries(por).filter(([, m]) => m.n >= 2).map(([k, m]) => [k, m.s / m.n]));
   }
   // Dias que faltam no mês, contados pelo seu costume nas últimas 8 semanas. Cada dia da semana tem um peso:
   // quanto você roda nele (pelo KM do dia de trabalho, se você anota), ou quanto ganha nele (dia que ganha mais
@@ -1987,8 +2061,16 @@ td { padding: 10px 6px; }
             <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b><span>${[f.posto ? esc(f.posto) : "", f.litros ? num(f.litros, 1) + " L" : "", f.preco ? brl(f.preco) + "/L" : "", f.km ? "KM " + num(f.km) : "", f.mixIncerto ? "mistura incerta: parcial sem KM" : f.mix && (f.mix.Etanol || 0) >= 0.05 && (f.mix.Gasolina || 0) >= 0.05 ? "rodou com " + num((f.mix.Etanol || 0) * 100) + "% de etanol" : ""].filter(Boolean).join(" · ") || esc(f.desc || "")}</span></div>
             <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.km > 0 && f.litros > 0 ? (f.junto ? "junto" : f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
             <span class="val x">${brl(f.valor)}</span></button>`).join("")}</div>` : ""}`;
-      const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>preço pago, o mais recente pesa mais</small></div>
-        ${prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}</small></span><b class="num">${brl(p.preco)}/L</b></div>`).join("")}</div>`).join("")}</div>`;
+      // com o rendimento de cada posto (2 tanques ou mais lá), a ordem passa a ser pelo custo por km
+      const rp = rendPostos(car);
+      prCombs.forEach((c) => {
+        const k = fd.kmlPor[c] || fd.media;
+        pr[c].forEach((p) => { p.rend = rp[c + "|" + p.posto.toLowerCase()] || null; p.custoKm = k ? p.preco / (k * (p.rend || 1)) : null; });
+        if (pr[c].some((p) => p.rend) && pr[c].every((p) => p.custoKm)) pr[c].sort((a, b) => a.custoKm - b.custoKm);
+      });
+      const porKm = prCombs.some((c) => pr[c].some((p) => p.rend));
+      const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>${porKm ? "pelo custo por km, com o quanto rende" : "preço pago, o mais recente pesa mais"}</small></div>
+        ${prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? `<span class="tag-best">${porKm ? "melhor por km" : "mais barato"}</span>` : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}${p.rend && Math.abs(p.rend - 1) >= 0.03 ? ` · rende ${num(Math.abs(p.rend - 1) * 100)}% ${p.rend < 1 ? "menos" : "mais"}` : ""}</small></span><b class="num">${brl(p.preco)}/L${porKm && p.custoKm ? `<br><small>${brl(p.custoKm)}/km</small>` : ""}</b></div>`).join("")}</div>`).join("")}</div>`;
       const ckc = combPorKm(car), custoComb = ckc ? ckc.v : null;
       const combAut = combPadrao(carId), kmlAut = fd.kmlPor[combAut] || fd.media; // tanque cheio do combustível que você usa
       const autonomia = car.tanque > 0 && kmlAut ? car.tanque * kmlAut : null;
@@ -2005,6 +2087,16 @@ td { padding: 10px 6px; }
             custoComb ? ["Preço por km", brl(custoComb)] : null,
             autonomia ? ["Rende por tanque", num(autonomia) + " <small>km</small>" + (Object.keys(fd.kmlPor).length > 1 ? `<br><small>com ${combAut.toLowerCase()}</small>` : "")] : null,
             s.span > 0 ? ["Rodou em " + mes, num(s.span) + " <small>km</small>"] : null,
+            ...(() => {
+              // gasto pelo que foi queimado no mês e quanto custaria só com o outro combustível
+              const q = queimadoMes(car, S.ym);
+              if (!q) return [];
+              const pc = Object.entries(q.porComb).filter(([, o]) => o.v >= 0.5);
+              const r = [["Queimou em " + mes, brl(q.total) + (pc.length > 1 ? `<br><small>${pc.map(([c, o]) => c.toLowerCase() + " " + brl(o.v)).join(" · ")}</small>` : "")]];
+              if (q.eco && Math.abs(q.eco.valor) >= 1) r.push([q.eco.valor >= 0 ? "Economizou em " + mes : "Gastou a mais em " + mes,
+                `<span style="color:var(--${q.eco.valor >= 0 ? "ganho" : "gasto"})">${brl(Math.abs(q.eco.valor))}</span><br><small>do que só com ${q.eco.outro.toLowerCase()}</small>`]);
+              return r;
+            })(),
           ].filter(Boolean);
           return t.length ? `<div class="metrics">${t.map(([l, v]) => `<div><span class="label">${l}</span><span class="v">${v}</span></div>`).join("")}</div>` : "";
         })()}
@@ -2890,6 +2982,8 @@ td { padding: 10px 6px; }
       "A previsão também acompanha os ganhos do mês, ignora férias e dias parados na média de km, e segue a tendência do preço da ANP na sua cidade.",
       "Feriados contam pelo seu costume (se você não trabalha em feriado, ele sai da conta), e com mais de um ano de registros a previsão segue a época do ano.",
       "O resto do mês vai pelo preço do posto onde você mais abastece, e o Resumo mostra quanto a previsão acertou em cada mês.",
+      "Consumo: quanto você queimou de gasolina e de etanol no mês, e quanto economizou (ou gastou a mais) em relação a usar só o outro combustível.",
+      "Aviso quando um tanque rende 10% ou mais abaixo do normal, e postos comparados pelo custo por km, com quanto o combustível de cada um rende.",
       "Mistura do tanque: mostra o álcool total (com os 30% de etanol que já vêm na gasolina), estima os km de um abastecimento sem KM pelos dias e descobre pelo consumo o que já estava no tanque antes do primeiro registro.",
     ] },
     { v: 9, data: "2026-11-04", itens: [
