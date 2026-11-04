@@ -642,6 +642,13 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(comb).toContainText("Gasolina");
   await expect(comb).toContainText("Etanol");
   await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText("Etanol"); // previsão separada também
+  // mistura do tanque: o último tanque cheio de 40 L encheu um tanque de 40 L vazio, então é só gasolina
+  const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  await expect(tq).toContainText("Gasolina");
+  await expect(tq).toContainText("100%");
+  // economia: etanol 8 ÷ gasolina 12 × R$ 6,25 = R$ 4,17 é o preço máximo do etanol; a R$ 4,00 ele sai mais barato por km
+  await expect(tq).toContainText(/O etanol compensa até R\$\s4,[12]\d o litro/); // ~R$ 4,17 (as médias saem ~12 e ~8)
+  await expect(tq).toContainText("Priorize etanol");
   await aba(page, "carro");
   await parte(page, "consumo");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com gasolina");
@@ -881,4 +888,32 @@ test("previsão do mês mostra a faixa quando os km da semana variam", async ({ 
   }
   await abrir(page, dados({ lancamentos: abs }));
   await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/entre R\$\s[\d.,]+ e R\$\s[\d.,]+/);
+});
+
+test("mistura atual do tanque: tanque cheio guarda o que já estava lá (exemplo do mandato)", async ({ page }) => {
+  // tanque de 50 L com gasolina; rodou 240 km e completou com 20 L de etanol: antes havia 30 L de gasolina
+  const ab = (d, km, comb, litros, valor) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, 312.5), ab(-1, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
+  const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  await expect(tq).toContainText("60%"); // gasolina 30 L
+  await expect(tq).toContainText("30,0 L");
+  await expect(tq).toContainText("40%"); // etanol 20 L
+  await expect(tq).toContainText("20,0 L");
+  await expect(tq).toContainText("50 L estimados de 50 L");
+  await expect(tq).toContainText("confiança alta");
+});
+
+test("mistura sem referência: parcial sem KM deixa a estimativa como não confiável", async ({ page }) => {
+  const ab = (d, km, comb, litros, cheio) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio, valor: litros * 5, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, true), ab(-1, 0, "Etanol", 15, false)], carros: [{ id: "principal", tanque: 50 }] }));
+  const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  // sem KM no último abastecimento não dá para saber quanto havia no tanque: nada de porcentagem inventada
+  await expect(tq).toContainText("Estimativa de mistura ainda não confiável");
+  await expect(tq).not.toContainText("%");
+});
+
+test("abastecimento com mais litros que o tanque vira aviso", async ({ page }) => {
+  const ab = (d, km, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: litros * 6, litros, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-10, 10000, 40), ab(-1, 10500, 55)], carros: [{ id: "principal", tanque: 40 }] }));
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um abastecimento" })).toContainText("55,0 L, mais que o tanque de 40 L");
 });
