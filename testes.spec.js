@@ -1174,7 +1174,7 @@ test("postos ordenados pelo custo por km, com o quanto cada um rende", async ({ 
   await aba(page, "carro");
   await parte(page, "consumo");
   const card = page.locator(".card", { hasText: "Postos" });
-  await expect(card).toContainText("pelo custo por km");
+  await expect(card).toContainText("por custo por km");
   await expect(card.locator(".split").first()).toContainText("Posto A");
   await expect(card.locator(".split").first()).toContainText("melhor por km");
   await expect(card).toContainText(/rende \d+% menos/);
