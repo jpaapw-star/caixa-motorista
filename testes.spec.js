@@ -760,7 +760,7 @@ test("com uma janela aberta, a tela de trás não rola, e volta para o mesmo lug
   expect(antes).toBeGreaterThan(0);
   await page.locator("#fab").click();
   await expect(page.locator("body")).toHaveClass(/travado/);
-  await page.mouse.wheel(0, 600);
+  await page.evaluate(() => window.scrollBy(0, 600)); // tentar rolar o fundo (a roda do mouse não existe no iPhone)
   await page.locator("#fCancel").click();
   await expect(page.locator("body")).not.toHaveClass(/travado/);
   expect(await page.evaluate(() => window.scrollY)).toBe(antes);
