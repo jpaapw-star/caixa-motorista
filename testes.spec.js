@@ -647,6 +647,8 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
   await expect(page.locator("#tab-carro .metrics")).toContainText("8,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Preço médio do etanol");
+  // por km: Σ(litros × preço) ÷ Σ(litros × km/l) = (120×6,25 + 80×4) ÷ (120×12 + 80×8) = R$ 0,51 (pelos litros seria R$ 0,54)
+  await expect(page.locator("#tab-carro .metrics div", { hasText: "Combustível por km" })).toContainText("R$ 0,51");
 });
 
 test("tanque misturado não dá ao etanol a média da gasolina", async ({ page }) => {
@@ -805,4 +807,42 @@ test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) =
   await page.locator("#fDel").click();
   await page.locator("#fDel").click();
   await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
+});
+
+test("lucro por hora e ganho por km dividem só o que foi anotado junto", async ({ page }) => {
+  // dia A: 5 h, 100 km e R$ 100; dia B: R$ 100 sem horas nem KM. Antes: R$ 200 ÷ 5 h = R$ 40/h e R$ 2/km.
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  await page.clock.setFixedTime(base);
+  const d20 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  await abrir(page, dados({
+    lancamentos: [{ data: d20(-1), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }, { data: d20(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 2 }],
+    dias: [{ data: d20(-1), horas: 5, kmIni: 1000, kmFim: 1100 }],
+  }));
+  await page.click("#trabMais");
+  const q = page.locator("#tab-inicio .metrics").first();
+  await expect(q.locator("div", { hasText: "Lucro por hora" })).toContainText("R$ 20,00");
+  await expect(q.locator("div", { hasText: /^Ganho por km/ }).first()).toContainText("R$ 1,00");
+  await expect(q.locator("div", { hasText: "Lucro por dia" })).toContainText("R$ 100,00"); // 2 dias trabalhados
+});
+
+test("km rodados no mês: a virada do mês fica dividida entre os dois meses", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 10, 15);
+  await page.clock.setFixedTime(base);
+  const d10 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  const ab = (d, km) => ({ data: d10(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + d });
+  // 1.000 dois dias antes do dia 1 e 1.500 no dia 4: dos 500 km, 150 foram no mês passado. Depois 2.000 hoje (dia 10).
+  await abrir(page, dados({ lancamentos: [ab(-11, 1000), ab(-6, 1500), ab(0, 2000)] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await expect(page.locator("#tab-carro .metrics div", { hasText: "Rodou em" })).toContainText("850");
+});
+
+test("custo por km da manutenção vem da lista de serviços, não de uma troca de pneus no mês", async ({ page }) => {
+  await abrir(page, dados({
+    manutencao: [{ servico: "Troca de óleo", custo: 300, cadaKm: 10000 }],
+    lancamentos: [{ data: dia(-5), tipo: "gasto", cat: "Peças / pneus", valor: 1000, km: 40500, ts: 1 }, { data: dia(-20), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km: 40000, ts: 2 }],
+  }));
+  await aba(page, "carro");
+  await parte(page, "custos");
+  await expect(page.locator(".bar-row", { hasText: "Manutenção, pneus e lavagem" })).toContainText("R$ 0,03/km"); // R$ 300 ÷ 10.000 km
 });

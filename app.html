@@ -567,10 +567,17 @@ td { padding: 10px 6px; }
     const D = S.dias.filter((x) => (x.data || "").startsWith(ym) && (!carId || cid(x) === carId));
     const ganhos = sum(L.filter((x) => x.tipo === "ganho"));
     const gastos = sum(L.filter((x) => x.tipo === "gasto"));
-    const trab = sum(L.filter((x) => x.tipo === "ganho" && x.trabalho));
+    const LT = L.filter((x) => x.tipo === "ganho" && x.trabalho);
+    const trab = sum(LT);
     const horas = sum(D, "horas"), corridas = sum(D, "corridas");
-    const dias = new Set(D.map((d) => d.data)).size;
-    const kmDias = D.reduce((a, d) => a + ((d.kmFim > 0 && d.kmIni > 0 && d.kmFim >= d.kmIni) ? d.kmFim - d.kmIni : 0), 0);
+    // dias trabalhados: com dia de trabalho anotado ou com ganho dos apps
+    const dias = new Set([...D.map((d) => d.data), ...LT.map((x) => x.data)]).size;
+    const kmOkDia = (d) => d.kmFim > 0 && d.kmIni > 0 && d.kmFim >= d.kmIni;
+    const kmDias = D.reduce((a, d) => a + (kmOkDia(d) ? d.kmFim - d.kmIni : 0), 0);
+    // cada número "por" divide só pelo que foi anotado junto: ganho dos dias com horas pelas horas,
+    // dos dias com KM pelos km, dos dias com corridas pelas corridas (um dia sem horas anotadas não infla o por hora)
+    const trabEm = (f) => { const ds = new Set(D.filter(f).map((d) => d.data)); return sum(LT.filter((x) => ds.has(x.data))); };
+    const trabHoras = trabEm((d) => d.horas > 0), trabKm = trabEm(kmOkDia), trabCorr = trabEm((d) => d.corridas > 0);
     // km com passageiro: só dos dias em que foi anotado
     const DPa = D.filter((d) => d.kmPass > 0);
     const datasPass = new Set(DPa.map((d) => d.data));
@@ -579,16 +586,17 @@ td { padding: 10px 6px; }
     const DPo = DPa.filter((d) => d.kmFim > 0 && d.kmIni > 0 && d.kmFim > d.kmIni);
     const rodPo = DPo.reduce((a, d) => a + d.kmFim - d.kmIni, 0);
     const vazioPct = rodPo > 0 ? Math.max(0, 1 - sum(DPo, "kmPass") / rodPo) : null;
-    // km rodados: maior menos menor KM de cada carro, somando os carros
-    const porCarro = {};
-    const addR = (x, v) => { if (v > 0) (porCarro[cid(x)] = porCarro[cid(x)] || []).push(Number(v)); };
-    L.forEach((x) => addR(x, x.km));
-    D.forEach((d) => { addR(d, d.kmIni); addR(d, d.kmFim); });
-    const span = Object.values(porCarro).reduce((a, r) => a + (r.length > 1 ? Math.max(...r) - Math.min(...r) : 0), 0);
+    // km rodados no período, somando os carros (sem KM digitado errado, e a virada do mês dividida entre os dois meses)
+    const ini = ym.length === 7 ? ym + "-01" : ym;
+    const fim = ym.length === 7 ? dStr(addMonths(ini, 1)) : diaSeguinte(ym);
+    const span = Math.round(carros().filter((c) => !carId || c.id === carId).reduce((a, c) => a + kmEntre(c.id, ini, fim), 0));
     const litros = sum(L, "litros");
     const comb = sum(L.filter((x) => x.cat === "Combustível"));
     const lucroCarro = trab - gastos;
-    return { L, D, ganhos, gastos, saldo: ganhos - gastos, trab, lucroCarro, horas, corridas, dias, kmDias, span, litros, comb, kmPass, trabPass, vazioPct };
+    // lucro por hora: a parte do lucro que veio dos dias com horas anotadas, pelas horas
+    const lucroH = horas > 0 ? (trab > 0 ? lucroCarro * trabHoras / trab : lucroCarro) / horas : null;
+    return { L, D, ganhos, gastos, saldo: ganhos - gastos, trab, lucroCarro, horas, corridas, dias, kmDias, span, litros, comb, kmPass, trabPass, vazioPct,
+      lucroH, lucroDia: dias > 0 ? lucroCarro / dias : null, perKm: kmDias > 0 ? trabKm / kmDias : null, porCorrida: corridas > 0 ? trabCorr / corridas : null };
   }
   function mStatus(m0, km) {
     const m = efetivo(m0);
@@ -697,10 +705,40 @@ td { padding: 10px 6px; }
       const de = antes != null ? pts[antes] : pts[depois], para = p;
       if (de) suspeitos.push({ de, para, dd: Math.abs(diasEntre(de, para)) });
     });
-    if (cadeia.length < 2) return { km: 0, dias: 0, suspeitos };
-    const a = pts[cadeia[0]], b = pts[cadeia[cadeia.length - 1]];
-    return { km: b.k - a.k, dias: diasEntre(a, b), suspeitos };
+    const cad = cadeia.map((i) => pts[i]);
+    if (cadeia.length < 2) return { km: 0, dias: 0, suspeitos, cadeia: cad };
+    const a = cad[0], b = cad[cad.length - 1];
+    return { km: b.k - a.k, dias: diasEntre(a, b), suspeitos, cadeia: cad };
   }
+  // Km rodados entre duas datas (ini até antes de fim), só com os KM que fazem sentido (sem os digitados errado).
+  // Na virada do período, o KM é estimado entre a última anotação antes e a primeira depois,
+  // para os km rodados nesses dias irem para o mês em que foram rodados.
+  const kmCache = new Map();
+  function cadeiaKm(carId) {
+    const car = carById(carId) || {};
+    const deps = [S.lanc, S.dias, S.hist, car];
+    const c0 = kmCache.get(carId);
+    if (c0 && c0.deps.every((d, i) => d === deps[i])) return c0.val;
+    const val = trechosKm(leiturasKm(carId)).cadeia;
+    kmCache.set(carId, { deps, val });
+    return val;
+  }
+  function kmNaData(cad, d) {
+    // KM à meia-noite que abre o dia d, contando cada anotação ao meio-dia do dia dela
+    let a = null, b = null;
+    for (const p of cad) { if (p.d < d) a = p; else { b = p; break; } }
+    if (!a) return b ? b.k : 0;
+    if (!b) return a.k;
+    const t = (x) => new Date(x + "T12:00").getTime() / 864e5;
+    const ta = t(a.d), tb = t(b.d), td = t(d) - 0.5;
+    return a.k + (b.k - a.k) * Math.min(1, Math.max(0, (td - ta) / (tb - ta)));
+  }
+  function kmEntre(carId, ini, fim) {
+    const cad = cadeiaKm(carId);
+    if (cad.length < 2) return 0;
+    return Math.max(0, kmNaData(cad, fim) - kmNaData(cad, ini));
+  }
+  const diaSeguinte = (d) => dStr(new Date(new Date(d + "T12:00").getTime() + 864e5));
   function leiturasKm(carId) {
     const car = carById(carId) || {};
     const r = [];
@@ -733,7 +771,7 @@ td { padding: 10px 6px; }
     return est > 0 ? { kmDia: est, kmMes: est * 30.44, fonte: "pela sua estimativa", estimativa: true } : null;
   }
   const tempoTxt = (d) => { if (d <= 1) return "1 dia"; if (d < 45) return d + " dias"; const m = Math.round(d / 30.44); return m + (m === 1 ? " mês" : " meses"); };
-  // Custo de cada km rodado: combustível + manutenção (dos seus registros dos últimos 90 dias)
+  // Custo de cada km rodado: combustível (preço de hoje ÷ seu consumo) + manutenção (pela lista de serviços)
   // + custos fixos e desvalorização (que você informa), divididos pelos km que você roda por mês.
   function custoReal(car = carAtivo()) {
     const c = car.custos || {};
@@ -741,16 +779,22 @@ td { padding: 10px 6px; }
     const lim = new Date(); lim.setDate(lim.getDate() - 90);
     const limS = dStr(lim);
     const L = S.lanc.filter((x) => (x.data || "") >= limS && cid(x) === car.id);
-    const D = S.dias.filter((x) => (x.data || "") >= limS && cid(x) === car.id);
-    const reads = [];
-    L.forEach((x) => { if (x.km > 0) reads.push({ d: x.data, k: Number(x.km) }); });
-    D.forEach((x) => { if (x.kmIni > 0) reads.push({ d: x.data, k: Number(x.kmIni) }); if (x.kmFim > 0) reads.push({ d: x.data, k: Number(x.kmFim) }); });
-    let span = 0;
-    if (reads.length > 1) { const ks = reads.map((r) => r.k); span = Math.max(...ks) - Math.min(...ks); }
+    const span = kmEntre(car.id, limS, diaSeguinte(today())); // km dos últimos 90 dias, sem KM digitado errado
     const rk = ritmoKm(car.id);
     const kmMes = rk ? rk.kmMes : null, fonte = rk ? rk.fonte : "";
-    const combKm = fd.precoMedio && fd.media ? fd.precoMedio / fd.media : (span > 0 ? sum(L.filter((x) => x.cat === "Combustível")) / span : null);
-    const manutKm = span > 0 ? sum(L.filter((x) => [...HIST_CATS, "Lavagem"].includes(x.cat))) / span : null;
+    const ck = combPorKm(car);
+    const combKm = ck ? ck.v : (span > 0 ? sum(L.filter((x) => x.cat === "Combustível")) / span : null);
+    // Manutenção por km pela lista de serviços (cada um: custo ÷ km até a próxima troca, pelo km ou pelo tempo,
+    // o que vier antes), igual à caixinha. Assim uma troca de pneus no mês não dobra o custo, e um mês sem
+    // serviço não zera. Lavagem vem do que você pagou. Sem lista com valores: o que você pagou ÷ km rodados.
+    let planoKm = 0, temPlano = false;
+    for (const m0 of S.manut.filter((x) => cid(x) === car.id)) {
+      const cs = custoServico(m0), m = efetivo(m0);
+      const kmInt = Math.min(m.cadaKm > 0 ? Number(m.cadaKm) : Infinity, m.cadaMeses > 0 && kmMes > 0 ? m.cadaMeses * kmMes : Infinity);
+      if (cs.v > 0 && isFinite(kmInt) && kmInt > 0) { planoKm += cs.v / kmInt; temPlano = true; }
+    }
+    const lavKm = span > 0 ? sum(L.filter((x) => x.cat === "Lavagem")) / span : 0;
+    const manutKm = temPlano ? planoKm + lavKm : span > 0 ? sum(L.filter((x) => [...HIST_CATS, "Lavagem"].includes(x.cat))) / span : null;
     const n0 = (v) => Number(v) || 0;
     const fixosMes = n0(c.seguroAno) / 12 + n0(c.ipvaAno) / 12 + n0(c.licAno) / 12 + n0(c.parcelaMes) + n0(c.outrosMes);
     const desvalMes = n0(c.valorCarro) * (c.desvalPct != null ? n0(c.desvalPct) : 10) / 100 / 12;
@@ -879,12 +923,15 @@ td { padding: 10px 6px; }
   const mesAno = (d) => MES_AB[d.getMonth()] + "/" + String(d.getFullYear()).slice(2);
 
   function postosRank() {
-    const map = {};
+    // preço médio de cada posto com peso caindo pela metade a cada 2 meses: um preço de um ano atrás quase não conta,
+    // então o "mais barato" é o de agora
+    const map = {}, hoje = new Date(today() + "T12:00");
     S.lanc.filter((x) => x.cat === "Combustível" && x.posto && x.litros > 0).forEach((x) => {
       const comb = x.comb || "Combustível";
       const key = comb + "|" + String(x.posto).trim().toLowerCase();
       const m = map[key] || (map[key] = { posto: String(x.posto).trim(), comb, v: 0, l: 0, n: 0, ult: "" });
-      m.v += Number(x.valor) || 0; m.l += Number(x.litros) || 0; m.n++;
+      const peso = 0.5 ** (Math.max(0, (hoje - new Date((x.data || today()) + "T12:00")) / 864e5) / 61);
+      m.v += (Number(x.valor) || 0) * peso; m.l += (Number(x.litros) || 0) * peso; m.n++;
       if ((x.data || "") >= m.ult) m.ult = x.data;
     });
     const by = {};
@@ -922,9 +969,7 @@ td { padding: 10px 6px; }
       alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
         txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. O ${num(para.k)} está ${src.onde || "nos seus registros"} e fica fora das contas até você corrigir.` });
     });
-    const lucroH = s.horas > 0 ? s.lucroCarro / s.horas : null;
-    const lucroDia = s.dias > 0 ? s.lucroCarro / s.dias : null;
-    const perKm = s.kmDias > 0 ? s.trab / s.kmDias : null;
+    const { lucroH, lucroDia, perKm } = s;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
     // números extras do mês: só os que já têm valor (nada de quadro com "—")
     const tile = (label, v) => v == null ? null : `<div><span class="label">${label}</span><span class="v">${v}</span></div>`;
@@ -932,7 +977,7 @@ td { padding: 10px 6px; }
       tile("Lucro por hora", lucroH == null ? null : brl(lucroH)),
       tile("Lucro por dia", lucroDia == null ? null : brl(lucroDia)),
       tile("Ganho por km", perKm == null ? null : brl(perKm)),
-      tile("Por corrida", s.corridas > 0 ? brl(s.trab / s.corridas) : null),
+      tile("Por corrida", s.porCorrida == null ? null : brl(s.porCorrida)),
       tile("Km rodados vazio", s.vazioPct == null ? null : num(s.vazioPct * 100) + " <small>%</small>"),
       tile("Ganho por km c/ passageiro", s.kmPass > 0 ? brl(s.trabPass / s.kmPass) : null),
     ].filter(Boolean);
@@ -1311,6 +1356,27 @@ td { padding: 10px 6px; }
     L.forEach((x) => { out[x.comb] = (out[x.comb] || 0) + Number(x.litros) / tot; });
     return out;
   }
+  // Combustível por km de hoje: preço que você pagou por último ÷ consumo do seu carro, para cada combustível,
+  // na mistura que você coloca (litros dos últimos 90 dias). Com litros L e consumo kml de cada um,
+  // o km sai por Σ(L × preço) ÷ Σ(L × kml): o etanol rende menos km por litro, então pesa pelos km que dá, não pelos litros.
+  // Sem consumo de algum deles ainda: preço médio dos últimos 90 dias ÷ média geral do carro.
+  function combPorKm(car) {
+    const mc = opcoesComb(car, {}, false), fd = mc.fd; // só preços que você pagou (a calculadora e a ANP não mexem aqui)
+    const mix = misturaComb(car.id);
+    const partes = Object.entries(mix).map(([c, sh]) => ({ c, sh, o: mc.ops.find((o) => o.comb === c) || {} }));
+    if (partes.length && partes.every((p) => p.o.custoKm)) {
+      const kmL = partes.reduce((a, p) => a + p.sh * p.o.kml, 0);
+      const porComb = Object.fromEntries(partes.map((p) => [p.c, p.sh * p.o.preco / kmL]));
+      return { v: Object.values(porComb).reduce((a, b) => a + b, 0), porComb, nome: partes.length === 1 ? partes[0].c : "" };
+    }
+    if (!fd.media) return null;
+    const lim = dStr(new Date(Date.now() - 90 * 864e5));
+    const rec = fd.all.filter((f) => f.litros > 0 && (f.data || "") >= lim);
+    const lr = sum(rec, "litros"), pm = lr > 0 ? sum(rec) / lr : fd.precoMedio;
+    if (!pm) return null;
+    const nome = combPadrao(car.id);
+    return { v: pm / fd.media, porComb: { [nome]: pm / fd.media }, nome };
+  }
   function custoDiario() {
     const DM = 30.44;
     let comb = 0, fixos = 0, combNome = "", kmDiaTot = 0;
@@ -1321,21 +1387,13 @@ td { padding: 10px 6px; }
       fixos += ((Number(c.parcelaMes) || 0) + (Number(c.outrosMes) || 0)) / DM;
       const temUso = rk || S.lanc.some((x) => cid(x) === car.id);
       if (!temUso) continue;
-      const mc = opcoesComb(car, {}, false); // só preços que você pagou (a calculadora e a ANP não mexem na previsão)
-      const fd = mc.fd;
-      const ck = mc.melhor ? mc.melhor.custoKm : fd.precoMedio && fd.media ? fd.precoMedio / fd.media : null;
-      // quem usa mais de um combustível: a previsão segue a sua mistura dos últimos 90 dias (pelos litros),
-      // cada parte com o custo por km do próprio combustível
-      const mix = misturaComb(car.id), partesMix = Object.entries(mix).map(([c, sh]) => [c, sh, (mc.ops.find((o) => o.comb === c) || {}).custoKm]);
-      if (rk && partesMix.length > 1 && partesMix.every(([, , k]) => k)) {
-        let dia = 0;
-        for (const [c, sh, k] of partesMix) { const v = rk.kmDia * sh * k; porComb[c] = (porComb[c] || 0) + v; dia += v; }
-        comb += dia; kmDiaTot += rk.kmDia; combNome = "";
+      // a previsão segue o que você coloca de verdade (sua mistura dos últimos 90 dias), com o preço que pagou por último
+      const ck = combPorKm(car);
+      if (rk && ck) {
+        const dia = rk.kmDia * ck.v;
+        for (const [c, v] of Object.entries(ck.porComb)) porComb[c] = (porComb[c] || 0) + rk.kmDia * v;
+        comb += dia; kmDiaTot += rk.kmDia; combNome = ck.nome.toLowerCase();
         porCarro.push({ nome: nomeCarro(car), id: car.id, dia });
-      } else if (rk && ck) {
-        comb += rk.kmDia * ck; kmDiaTot += rk.kmDia; combNome = mc.melhor ? mc.melhor.comb.toLowerCase() : "";
-        const cn = mc.melhor ? mc.melhor.comb : combPadrao(car.id); porComb[cn] = (porComb[cn] || 0) + rk.kmDia * ck;
-        porCarro.push({ nome: nomeCarro(car), id: car.id, dia: rk.kmDia * ck });
       }
       else faltam.push(nomeCarro(car));
     }
@@ -1448,10 +1506,11 @@ td { padding: 10px 6px; }
             <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b><span>${[f.posto ? esc(f.posto) : "", f.litros ? num(f.litros, 1) + " L" : "", f.preco ? brl(f.preco) + "/L" : "", f.km ? "KM " + num(f.km) : "", f.mixIncerto ? "mistura incerta: parcial sem KM" : f.mix && (f.mix.Etanol || 0) >= 0.05 && (f.mix.Gasolina || 0) >= 0.05 ? "rodou com " + num((f.mix.Etanol || 0) * 100) + "% de etanol" : ""].filter(Boolean).join(" · ") || esc(f.desc || "")}</span></div>
             <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.km > 0 && f.litros > 0 ? (f.junto ? "junto" : f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
             <span class="val x">${brl(f.valor)}</span></button>`).join("")}</div>` : ""}`;
-      const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>preço médio pago</small></div>
+      const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>preço pago, o mais recente pesa mais</small></div>
         ${prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}</small></span><b class="num">${brl(p.preco)}/L</b></div>`).join("")}</div>`).join("")}</div>`;
-      const custoComb = fd.precoMedio && fd.media ? fd.precoMedio / fd.media : null;
-      const autonomia = car.tanque > 0 && fd.media ? car.tanque * fd.media : null;
+      const ckc = combPorKm(car), custoComb = ckc ? ckc.v : null;
+      const combAut = combPadrao(carId), kmlAut = fd.kmlPor[combAut] || fd.media; // tanque cheio do combustível que você usa
+      const autonomia = car.tanque > 0 && kmlAut ? car.tanque * kmlAut : null;
       const temEta = fd.trechos.some((f) => f.combTrecho === "Etanol");
       const showCmp = opcoesComb(car).ops.length > 1;
       pane = `
@@ -1467,7 +1526,7 @@ td { padding: 10px 6px; }
               return ks.length > 1 ? ks.map((c) => ["Preço médio " + (c === "GNV" ? "do m³ de GNV" : (c === "Gasolina" ? "da " : "do ") + c.toLowerCase()), brl(pc[c][0] / pc[c][1])]) : [fd.precoMedio ? ["Preço médio do litro", brl(fd.precoMedio)] : null];
             })(),
             custoComb ? ["Combustível por km", brl(custoComb)] : null,
-            autonomia ? ["Rende com o tanque cheio", num(autonomia) + " <small>km</small>"] : null,
+            autonomia ? [Object.keys(fd.kmlPor).length > 1 ? "Tanque cheio de " + combAut.toLowerCase() + " rende" : "Rende com o tanque cheio", num(autonomia) + " <small>km</small>"] : null,
             s.span > 0 ? ["Rodou em " + mes, num(s.span) + " <small>km</small>"] : null,
           ].filter(Boolean);
           return t.length ? `<div class="metrics">${t.map(([l, v]) => `<div><span class="label">${l}</span><span class="v">${v}</span></div>`).join("")}</div>` : "";
@@ -2263,8 +2322,8 @@ td { padding: 10px 6px; }
     const ganhosCat = porCat("ganho"), gastosCat = porCat("gasto");
     $("#tab-resumo").innerHTML = `
       ${comDados.length ? `<div class="card"><div class="sec-h"><h2>Últimos 6 meses</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
-        <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th>${comHoras ? "<th>Ganho por hora</th>" : ""}</tr></thead><tbody>
-        ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td>${comHoras ? `<td>${d.horas > 0 ? brl(d.trab / d.horas) : "—"}</td>` : ""}</tr>`).join("")}
+        <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th>${comHoras ? "<th>Lucro por hora</th>" : ""}</tr></thead><tbody>
+        ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td>${comHoras ? `<td class="val ${d.lucroH < 0 ? "x" : ""}">${d.lucroH != null ? brl(d.lucroH) : "—"}</td>` : ""}</tr>`).join("")}
         </tbody></table></div></div>` : `<div class="empty"><b>Nada anotado nos últimos 6 meses</b><span>Quando você lançar ganhos e gastos, o resumo aparece aqui.</span></div>`}
       ${ganhosCat ? `<div class="card"><div class="sec-h"><h2>Ganhos em ${mes}</h2></div>${ganhosCat}</div>` : ""}
       ${gastosCat ? `<div class="card"><div class="sec-h"><h2>Gastos em ${mes}</h2></div>${gastosCat}</div>` : ""}
@@ -2334,6 +2393,7 @@ td { padding: 10px 6px; }
     { v: 7, data: "2026-11-04", itens: [
       "Início mais limpo: saíram o botão \"Começar a trabalhar\" e o ganho por hora.",
       "Com uma janela aberta, a tela de trás não rola mais junto.",
+      "Contas mais certas: lucro por hora e ganho por km usam só os dias em que você anotou horas e KM; combustível por km usa o preço de hoje e conta o etanol pelos km que ele rende; manutenção por km vem da sua lista de serviços; km do mês divide a virada do mês e ignora KM digitado errado; postos mostram o preço mais recente.",
     ] },
     { v: 6, data: "2026-11-03", itens: [
       "Média da gasolina e do etanol calculadas juntas, com todos os seus tanques, mesmo com os dois misturados. Ao lado de cada uma aparece a confiança: baixa, média ou alta.",
