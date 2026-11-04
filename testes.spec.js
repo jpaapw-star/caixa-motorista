@@ -692,6 +692,52 @@ function abastMisturados({ T = 50, kg = 12, ke = 8.4, ordem, falta = {} }) {
   return L;
 }
 
+// Carro com GNV ou híbrido de tomada: parte dos km vai no cilindro ou na bateria, fora do tanque de líquido.
+// Cada trecho gasta q litros de gasolina (12 km/l) e v unidades do outro (GNV 14 km/m³, bateria 6 km/kWh).
+function abastComFora({ outro, k, semKm = false }) {
+  let km = 60000;
+  const L = [{ data: dia(-60), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 300, litros: 50, km, ts: 1 }];
+  for (let i = 0; i < 10; i++) {
+    const q = 50 * (0.5 + 0.07 * (i % 5)), v = (outro === "GNV" ? 5 : 8) + 3 * (i % 4);
+    km += Math.round(q * 12 + v * k);
+    const d = -57 + 5 * i;
+    // a carga em casa não tem KM e fica no meio do trecho; o GNV é na mesma parada, logo depois da gasolina
+    L.push({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: q * 6, litros: Math.round(q * 1000) / 1000, km, ts: 10 + 2 * i });
+    L.push({ data: dia(semKm ? d - 2 : d), tipo: "gasto", cat: "Combustível", comb: outro, cheio: true, valor: v * (outro === "GNV" ? 4.5 : 0.9), litros: v, km: semKm ? null : km, ts: 11 + 2 * i });
+  }
+  return L;
+}
+
+const mediaDe = async (m, c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
+
+test("carro com GNV: a média do GNV e a da gasolina saem separadas", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: abastComFora({ outro: "GNV", k: 14 }), carros: [{ id: "principal", tanque: 50, combustivel: "Flex + GNV" }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  // a conta puxa um pouco para o ponto de partida (GNV 1,2× a gasolina) enquanto há poucos tanques
+  await expect(m.locator("div", { hasText: "Média com gnv" })).toContainText("km/m³");
+  expect(Math.abs((await mediaDe(m, "gasolina")) - 12)).toBeLessThanOrEqual(0.15);
+  expect(Math.abs((await mediaDe(m, "gnv")) - 14)).toBeLessThanOrEqual(0.3);
+});
+
+test("híbrido de tomada: carga sem KM entra no trecho e a média do kWh sai separada", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: abastComFora({ outro: "Elétrico", k: 6, semKm: true }), carros: [{ id: "principal", tanque: 50, combustivel: "Híbrido de tomada" }] }));
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  const m = page.locator("#tab-carro .metrics");
+  await expect(m.locator("div", { hasText: "Média com elétrico" })).toContainText("km/kWh");
+  expect(Math.abs((await mediaDe(m, "gasolina")) - 12)).toBeLessThanOrEqual(0.15);
+  expect(Math.abs((await mediaDe(m, "elétrico")) - 6)).toBeLessThanOrEqual(0.15);
+  // o lançamento oferece a carga e pede kWh
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  await page.click('[data-cat="Combustível"]');
+  await page.locator('[data-comb="Elétrico"]').click();
+  await expect(page.locator(".fld", { has: page.locator("#fLit") })).toContainText("kWh");
+  await expect(page.locator('[data-comb="Diesel"]')).toHaveCount(0);
+});
+
 test("tanques misturados: as duas médias saem da conta com a porcentagem de cada tanque", async ({ page }) => {
   // carro de verdade faz 12 km/l com gasolina e 8,4 com etanol; o motorista nunca roda um tanque puro
   const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"] });
