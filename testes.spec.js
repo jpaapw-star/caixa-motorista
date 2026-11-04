@@ -726,7 +726,7 @@ test("gasolina e etanol na mesma parada contam como um abastecimento só", async
   const lista = page.locator("#tab-carro .mlist");
   await expect(lista).toContainText("junto");
   await expect(lista.locator(".fk")).not.toContainText(["40,0"]); // nenhum km/l de 40
-  await expect(lista.locator(".frow").filter({ hasText: "Etanol30,0 L" }).locator(".fk")).toContainText("10,0");
+  await expect(lista.locator(".frow").filter({ hasText: "120,00" }).locator(".fk")).toContainText("10,0");
 });
 
 test("parcial: o combustível que sobrou no tanque entra na mistura pelo KM rodado", async ({ page }) => {
@@ -738,7 +738,10 @@ test("parcial: o combustível que sobrou no tanque entra na mistura pelo KM roda
   await aba(page, "carro");
   await parte(page, "consumo");
   // o trecho rodou 252 km com 100% de etanol e 150 km com 67%: 88% no total (com a conta antiga, 93%)
-  await expect(page.locator("#tab-carro .frow").first()).toContainText("rodou com 88% de etanol");
+  // a lista mostra só data, combustível, km/l e valor; o resto aparece ao tocar
+  await expect(page.locator("#tab-carro .frow").first()).not.toContainText("KM ");
+  await page.locator("#tab-carro .frow").first().click();
+  await expect(page.locator("#fInfo")).toContainText("rodou com 88% de etanol");
 });
 
 test("parcial sem KM: a mistura do trecho fica incerta e não entra na conta de gasolina e etanol", async ({ page }) => {
@@ -1129,4 +1132,14 @@ test("postos ordenados pelo custo por km, com o quanto cada um rende", async ({ 
   await expect(card.locator(".split").first()).toContainText("Posto A");
   await expect(card.locator(".split").first()).toContainText("melhor por km");
   await expect(card).toContainText(/rende \d+% menos/);
+});
+
+test("Hoje: ganhou / gastou aparece só em dia de trabalho", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "gasto", cat: "Lavagem", valor: 40, ts: 1 }] }));
+  await expect(page.locator("#tab-inicio .hoje")).toHaveCount(0);
+});
+
+test("Hoje: ganhou / gastou aparece no dia em que trabalhou", async ({ page }) => {
+  await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "gasto", cat: "Lavagem", valor: 40, ts: 1 }, { data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 150, ts: 2 }] }));
+  await expect(page.locator("#tab-inicio .hoje")).toContainText("gastou");
 });

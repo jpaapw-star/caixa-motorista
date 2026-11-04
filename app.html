@@ -1054,7 +1054,7 @@ td { padding: 10px 6px; }
         <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
       </div></div>
       ${jornadaHTML()}
-      ${hoje.ganhos || hoje.gastos ? `<div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>` : ""}
+      ${hoje.ganhos > 0 || hoje.D.length ? `<div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>` : ""}
       ${extras.length ? `<button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês <span class="seta">${trabAberto ? "▴" : "▾"}</span></h2>${resumoTrab}</button>` : `<div class="sec-h"><h2>Trabalho no mês</h2>${resumoTrab}</div>`}
       <div class="metrics">
         ${(() => {
@@ -2077,7 +2077,7 @@ td { padding: 10px 6px; }
       const prCombs = Object.keys(pr);
       const abastHTML = `<div class="sec-h"><h2>Abastecimentos</h2><button class="btn sm ghost" id="addAbast3"${off}>+ Abastecer</button></div>
         ${lst.length ? `<div class="mlist">${lst.map((f) => `<button class="frow" data-lanc="${esc(f.id)}">
-            <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b><span>${[f.posto ? esc(f.posto) : "", f.litros ? num(f.litros, 1) + " L" : "", f.preco ? brl(f.preco) + "/L" : "", f.km ? "KM " + num(f.km) : "", f.mixIncerto ? "mistura incerta: parcial sem KM" : f.mix && (f.mix.Etanol || 0) >= 0.05 && (f.mix.Gasolina || 0) >= 0.05 ? "rodou com " + num((f.mix.Etanol || 0) * 100) + "% de etanol" : ""].filter(Boolean).join(" · ") || esc(f.desc || "")}</span></div>
+            <div class="fi"><b>${dBR(f.data).slice(0, 5)} · ${esc(f.comb || "Combustível")}</b>${f.mixIncerto ? `<span>mistura incerta: parcial sem KM</span>` : ""}</div>
             <div class="fk">${f.kml ? `<b class="num">${num(f.kml, 1)}</b><small>km/l</small>` : `<small>${f.km > 0 && f.litros > 0 ? (f.junto ? "junto" : f.cheio === false ? "parcial" : "início") : "sem KM"}</small>`}</div>
             <span class="val x">${brl(f.valor)}</span></button>`).join("")}</div>` : ""}`;
       // com o rendimento de cada posto (2 tanques ou mais lá), a ordem passa a ser pelo custo por km
@@ -2996,6 +2996,10 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 12, data: "2026-11-04", itens: [
+      "Lista de abastecimentos mais enxuta: data, combustível, km/l e valor. Toque num abastecimento para ver o resto.",
+      "\"Hoje: ganhou / gastou\" aparece só nos dias em que você trabalhou.",
+    ] },
     { v: 11, data: "2026-11-04", itens: [
       "Mistura do tanque: quando a confiança não é alta, o cartão mostra o que fazer no abastecimento para ela subir.",
       "Mistura do tanque mostra também quanto do tanque está vazio, em % e em litros, e a barra passa a ser o tanque inteiro.",
@@ -3110,6 +3114,14 @@ td { padding: 10px 6px; }
     if (!F.carId) F.carId = F.id ? PRINCIPAL : carAtivoId();
     if (F.valor !== "" && typeof F.valor === "number") F.valor = num(F.valor, 2);
     if (F.cat === "Combustível" && !F.comb) F.comb = combPadrao(F.carId);
+    // abastecimento já salvo: o que a lista não mostra (rendimento, preço do litro e mistura do trecho)
+    const fInfo = (() => {
+      if (!F.id || F.cat !== "Combustível") return "";
+      const f = fuelData(F.carId).all.find((x) => x.id === F.id);
+      if (!f) return "";
+      return [f.kml ? "Rendeu " + num(f.kml, 1) + " km/l" : "", f.preco ? brl(f.preco) + "/L" : "",
+        f.mixIncerto ? "mistura incerta: parcial sem KM" : f.mix && (f.mix.Etanol || 0) >= 0.05 && (f.mix.Gasolina || 0) >= 0.05 ? "rodou com " + num((f.mix.Etanol || 0) * 100) + "% de etanol" : ""].filter(Boolean).join(" · ");
+    })();
     const read = (b) => {
       const v = (id) => b.querySelector(id)?.value;
       if (b.querySelector("#fValor")) F.valor = v("#fValor");
@@ -3127,7 +3139,7 @@ td { padding: 10px 6px; }
       const cats = CATS.filter((c) => c.t === F.tipo);
       const showKm = KM_CATS.includes(F.cat);
       return `
-        <div><h2>${F.id ? "Editar lançamento" : "Novo lançamento"}</h2>${F.note ? `<p class="note">${esc(F.note)}</p>` : ""}</div>
+        <div><h2>${F.id ? "Editar lançamento" : "Novo lançamento"}</h2>${fInfo ? `<p class="note num" id="fInfo">${esc(fInfo)}</p>` : ""}${F.note ? `<p class="note">${esc(F.note)}</p>` : ""}</div>
         ${S.canImg && !F.id ? `<label class="btn-print" for="printIn">${ICON.cam} Ler de um print ou cupom</label>
           <input type="file" id="printIn" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
           <p class="hint" id="printMsg">${esc(F.printMsg || "Mande o print dos ganhos do app ou a foto do cupom. O Claude preenche e você confere.")}</p>` : ""}
