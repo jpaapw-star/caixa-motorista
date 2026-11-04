@@ -775,9 +775,11 @@ td { padding: 10px 6px; }
       // cada trecho entre dois KM pesa pelos dias dele, e o peso cai pela metade a cada 30 dias de idade:
       // se você passou a rodar mais ou menos nas últimas semanas, a média acompanha logo
       const t = (x) => new Date(x + "T12:00").getTime() / 864e5, agora = t(today());
+      // dias de folga longa (férias, oficina) não contam como dias rodados
+      const fg = folgas(), parados = (a, b) => { let n = 0; fg.forEach((d) => { if (d > a && d < b) n++; }); return n; };
       let wk = 0, wd = 0;
       for (let i = 1; i < cadeia.length; i++) {
-        const a = cadeia[i - 1], b = cadeia[i], dd = t(b.d) - t(a.d);
+        const a = cadeia[i - 1], b = cadeia[i], dd = Math.max(t(b.d) - t(a.d) > 0 ? 1 : 0, t(b.d) - t(a.d) - parados(a.d, b.d));
         const peso = 0.5 ** (Math.max(0, agora - (t(a.d) + t(b.d)) / 2) / 30);
         wk += (b.k - a.k) * peso; wd += dd * peso;
       }
@@ -1051,10 +1053,11 @@ td { padding: 10px 6px; }
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
           const atual = S.ym === ymNow(), pc = atual ? previsaoComb(s.comb) : null, prev = pc ? pc.valor : null;
+          if (pc && !loading) guardarPrevisao(pc, s.comb);
           const cm = {}; s.L.filter((x) => x.cat === "Combustível").forEach((x) => { const c = x.comb || "Outro"; cm[c] = (cm[c] || 0) + (Number(x.valor) || 0); });
           const combMes = Object.entries(cm).sort((a, b) => b[1] - a[1]);
           return `<button class="tile" data-calc="1"><span class="label">Combustível no mês&nbsp;›</span><span class="v">${brl(s.comb)}</span><span class="hint">${combMes.length > 1 ? combMes.map(([c, v]) => c + " " + brl(v)).join(" · ") : "Qual compensa colocar?"}</span></button>
-          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? (pc.faixa ? "entre " + brl(pc.faixa[0]) + " e " + brl(pc.faixa[1]) + (Object.keys(pc.porComb).length > 1 ? "<br>" : "") : "") + (Object.keys(pc.porComb).length > 1 ? Object.entries(pc.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v)).join(" · ") : pc.faixa ? "" : "gasto até hoje + " + brl(pc.combDia) + " por dia") : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
+          <button class="tile" data-calc="1"><span class="label">${atual ? "Previsão do mês" : "Combustível por dia"}&nbsp;›</span><span class="v">${atual ? (prev ? brl(prev) : "<small>—</small>") : brl(s.comb / N)}</span><span class="hint">${atual ? (prev ? dicaPrev(pc, cm) : "Depois de 2 tanques cheios com KM") : "média do mês"}</span></button>`;
         })()}
         <div><span class="label">Ganhos nos apps</span><span class="v">${brl(s.trab)}</span></div>
         ${trabAberto ? extras.join("") : ""}
@@ -1459,7 +1462,7 @@ td { padding: 10px 6px; }
     if (partes.length && partes.every((p) => p.o.custoKm)) {
       const kmL = partes.reduce((a, p) => a + p.sh * p.o.kml, 0);
       const porComb = Object.fromEntries(partes.map((p) => [p.c, p.sh * p.o.preco / kmL]));
-      return { v: Object.values(porComb).reduce((a, b) => a + b, 0), porComb, nome: partes.length === 1 ? partes[0].c : "" };
+      return { v: Object.values(porComb).reduce((a, b) => a + b, 0), porComb, nome: partes.length === 1 ? partes[0].c : "", kmL };
     }
     if (!fd.media) return null;
     const lim = dStr(new Date(Date.now() - 90 * 864e5));
@@ -1467,7 +1470,7 @@ td { padding: 10px 6px; }
     const lr = sum(rec, "litros"), pm = lr > 0 ? sum(rec) / lr : fd.precoMedio;
     if (!pm) return null;
     const nome = combPadrao(car.id);
-    return { v: pm / fd.media, porComb: { [nome]: pm / fd.media }, nome };
+    return { v: pm / fd.media, porComb: { [nome]: pm / fd.media }, nome, kmL: fd.media };
   }
   // Dias que faltam no mês, contados pelo seu costume nas últimas 8 semanas. Cada dia da semana tem um peso:
   // quanto você roda nele (pelo KM do dia de trabalho, se você anota), ou quanto ganha nele (dia que ganha mais
@@ -1483,8 +1486,10 @@ td { padding: 10px 6px; }
     if (!prim || (Date.now() - new Date(prim + "T12:00")) / 864e5 < 21 || ativo.size < 6) return null;
     const fonte = Object.keys(kmDia).length >= 6 ? kmDia : Object.keys(ganhoDia).length >= 6 ? ganhoDia : null;
     const tem = Array(7).fill(0), tot = Array(7).fill(0);
+    const fg = folgas();
     for (let d = new Date(prim + "T12:00"); dStr(d) < hojeS; d.setDate(d.getDate() + 1)) {
       const ds = dStr(d), w = d.getDay();
+      if (fg.has(ds)) continue; // férias não dizem nada sobre o dia da semana
       tot[w]++;
       tem[w] += fonte ? fonte[ds] || 0 : ativo.has(ds) ? 1 : 0;
     }
@@ -1533,20 +1538,192 @@ td { padding: 10px 6px; }
       valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
   }
 
+  // ----- ritmo do mês pelos ganhos -----
+  // Ganho dos apps por dia neste mês (até ontem) ÷ ganho por dia nas 8 semanas antes do mês. Mês mais fraco
+  // é sinal de que você está rodando menos, e vice-versa. O efeito cresce com os dias do mês (d ÷ (d + 10)):
+  // no dia 6 pesa um terço, no dia 20 dois terços. Fica entre 0,75 e 1,25. Precisa de 5 dias no mês e
+  // de ganhos em 10 dias das 8 semanas anteriores. Dias de folga longa ficam fora das duas contas.
+  function fatorGanhos() {
+    const h = new Date(), decorridos = h.getDate() - 1;
+    if (decorridos < 5) return 1;
+    const ini = ymNow() + "-01", hojeS = today(), limB = dStr(new Date(h.getFullYear(), h.getMonth(), 1 - 56));
+    const G = S.lanc.filter((x) => x.tipo === "ganho" && x.trabalho && x.data);
+    const base = G.filter((x) => x.data >= limB && x.data < ini);
+    if (new Set(base.map((x) => x.data)).size < 10) return 1;
+    const fg = folgas();
+    const diasSem = (de, ate) => { let n = 0; for (let d = new Date(de + "T12:00"); dStr(d) < ate; d.setDate(d.getDate() + 1)) if (!fg.has(dStr(d))) n++; return n; };
+    const prim = base.map((x) => x.data).sort()[0];
+    const dBase = diasSem(prim > limB ? prim : limB, ini), dMes = diasSem(ini, hojeS);
+    if (dBase < 14 || dMes < 3) return 1;
+    const porDiaBase = sum(base) / dBase, porDiaMes = sum(G.filter((x) => x.data >= ini && x.data < hojeS)) / dMes;
+    if (!(porDiaBase > 0)) return 1;
+    const r = Math.min(1.6, Math.max(0.4, porDiaMes / porDiaBase)), w = dMes / (dMes + 10);
+    return Math.min(1.25, Math.max(0.75, 1 + (r - 1) * w));
+  }
+  // ----- folgas longas -----
+  // Dias parados (férias, carro na oficina): uma sequência de dias sem nada anotado (sem ganho, sem dia de
+  // trabalho, sem abastecimento nem KM) entre dois dias com registro, de pelo menos 5 dias e pelo menos
+  // 3 vezes o intervalo comum entre os seus registros. Só vale para quem anota ganhos com frequência
+  // (10 dias com ganho nos últimos 120), senão todo intervalo pareceria folga.
+  let folgaCache = null;
+  function folgas() {
+    const chave = S.lanc.length + ":" + S.dias.length + ":" + today();
+    if (folgaCache && folgaCache.chave === chave) return folgaCache.set;
+    const lim = dStr(new Date(Date.now() - 120 * 864e5)), set = new Set();
+    const ganhoDias = new Set(S.lanc.filter((x) => x.tipo === "ganho" && x.trabalho && (x.data || "") >= lim).map((x) => x.data));
+    if (ganhoDias.size >= 10) {
+      const ativ = new Set([...ganhoDias, ...S.dias.map((d) => d.data), ...S.lanc.filter((x) => x.km > 0 || x.cat === "Combustível").map((x) => x.data)]
+        .filter((d) => d && d >= lim && d <= today()));
+      const ds = [...ativ].sort(), t = (d) => new Date(d + "T12:00").getTime() / 864e5;
+      const gaps = ds.slice(1).map((d, i) => Math.round(t(d) - t(ds[i])));
+      const sg = gaps.slice().sort((a, b) => a - b), med = sg.length ? sg[sg.length >> 1] : 1;
+      const min = Math.max(5, 3 * med);
+      ds.slice(1).forEach((d, i) => {
+        if (gaps[i] - 1 < min) return;
+        for (let x = new Date(ds[i] + "T12:00"); ;) { x.setDate(x.getDate() + 1); const xs = dStr(x); if (xs >= d) break; set.add(xs); }
+      });
+    }
+    folgaCache = { chave, set };
+    return set;
+  }
+  // ----- preço com tendência -----
+  // Pelas semanas da ANP na sua cidade (ou no seu estado), a variação do preço médio por dia, por mínimos
+  // quadrados, em proporção ao preço. O preço que você pagou por último é levado até o meio do resto do mês
+  // por essa variação. Só com 4 semanas ou mais, e no máximo 8% para cima ou para baixo.
+  function tendPreco(comb) {
+    const hist = S.anp && S.anp.historico && S.anp.historico.semanas, c = S.settings.cidade;
+    if (!Array.isArray(hist) || !c || !c.uf) return null;
+    const serie = (lugar) => hist.map((w) => {
+      const v = lugar(w) && lugar(w)[comb];
+      return w.fim && v > 0 ? [new Date(w.fim + "T12:00").getTime() / 864e5, Number(v)] : null;
+    }).filter(Boolean).sort((a, b) => a[0] - b[0]).slice(-8);
+    let pts = c.chave ? serie((w) => w.municipios && w.municipios[c.chave]) : [];
+    if (pts.length < 4) pts = serie((w) => w.estados && w.estados[c.uf]);
+    if (pts.length < 4) return null;
+    const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length, my = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    const sxx = pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0), sxy = pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0);
+    return sxx > 0 ? sxy / sxx / my : null; // fração do preço por dia
+  }
+  function fatorPreco(car, porComb, dr) {
+    const fd = fuelData(car.id), meio = Date.now() / 864e5 + dr / 2;
+    let tot = 0, aj = 0;
+    for (const [c, v] of Object.entries(porComb || {})) {
+      const tr = tendPreco(c), ult = fd.all.filter((f) => f.comb === c && f.litros > 0).pop();
+      const dias = ult ? meio - new Date(ult.data + "T12:00").getTime() / 864e5 : dr / 2;
+      tot += v; aj += v * (tr ? Math.min(1.08, Math.max(0.92, 1 + tr * dias)) : 1);
+    }
+    return tot > 0 ? aj / tot : 1;
+  }
+  // ----- o app aprende com o próprio erro -----
+  // Uma vez por dia o app guarda (nas configurações, que vão junto na cópia) o que já tinha gasto no mês e
+  // quanto previa gastar no resto dele, pela conta do consumo, antes de qualquer correção. Quando o mês acaba,
+  // compara: (gasto real do mês − gasto até aquele dia) ÷ o que previa para o resto, somando todos os dias
+  // guardados. Ex.: previa R$ 1.000 no total do resto e foi R$ 920 → fator 0,92 (previsões 8% altas).
+  // O fator de cada mês pesa pela metade a cada 3 meses de idade, e com poucos meses ele fica mais perto de 1
+  // (n ÷ (n + 1)). Vai de 0,75 a 1,3, e multiplica os km que faltam rodar.
+  const HIST_MESES = 7;
+  const combDoMes = (ym) => sum(S.lanc.filter((x) => x.cat === "Combustível" && (x.data || "").startsWith(ym)));
+  function calibracao() {
+    const h = S.settings.prevHist || {}, ymA = ymNow();
+    let sl = 0, sw = 0, n = 0;
+    for (const ym of Object.keys(h)) {
+      if (!(ym < ymA)) continue;
+      const arr = (Array.isArray(h[ym]) ? h[ym] : []).filter((e) => Array.isArray(e) && e[2] > 0);
+      if (arr.length < 5) continue; // mês com poucos dias guardados não ensina nada
+      const real = combDoMes(ym);
+      const den = arr.reduce((a, e) => a + e[2], 0), nume = arr.reduce((a, e) => a + Math.max(0, real - e[1]), 0);
+      if (!(den > 0)) continue;
+      const r = Math.min(2, Math.max(0.5, nume / den));
+      const [y1, m1] = ym.split("-").map(Number), [y2, m2] = ymA.split("-").map(Number);
+      const w = 0.5 ** (((y2 - y1) * 12 + m2 - m1 - 1) / 3);
+      sl += Math.log(r) * w; sw += w; n++;
+    }
+    if (!n) return { k: 1, n: 0 };
+    return { k: Math.min(1.3, Math.max(0.75, Math.exp((sl / sw) * (n / (n + 1))))), n };
+  }
+  // guarda a previsão de hoje (só a primeira do dia, só no mês atual e só com o banco já carregado)
+  function guardarPrevisao(pc, gastoMes) {
+    if (!pc || S.offline || !S.loaded.s || !S.base) return;
+    const ym = ymNow(), dia = new Date().getDate(), h = S.settings.prevHist || {};
+    const arr = Array.isArray(h[ym]) ? h[ym] : [];
+    if (arr.some((e) => e[0] === dia)) return;
+    const novo = { ...h, [ym]: [...arr, [dia, Math.round(gastoMes * 100) / 100, Math.round(pc.bruto * 100) / 100]] };
+    Object.keys(novo).sort().slice(0, -HIST_MESES).forEach((k) => delete novo[k]);
+    S.settings.prevHist = novo; // já vale aqui, para a próxima tela não guardar de novo
+    setTimeout(() => saveSettings({ prevHist: novo }).catch(() => {}), 0);
+  }
+  // ----- previsão pelos abastecimentos -----
+  // A partir dos litros que estão no tanque agora, o app vai gastando dia a dia os km que você costuma rodar
+  // (pelo dia da semana) ÷ km por litro da sua mistura. Quando o tanque chega no nível em que você costuma
+  // abastecer (mediana dos últimos 10), entra um abastecimento com os litros que você costuma colocar (mediana),
+  // pelo preço por litro da sua mistura (preço por km × km por litro). Os abastecimentos até o fim do mês são o que falta pagar.
+  function simulaAbast(car, t, pc, peso, k, fp = 1) {
+    const fd = fuelData(car.id), rec = fd.all.filter((f) => f.litros > 0 && f.comb).slice(-10);
+    const antes = rec.map((f) => f.nivelAntes).filter((v) => v != null), litros = rec.map((f) => Number(f.litros)).filter((v) => v > 0);
+    if (antes.length < 3 || litros.length < 3 || !(pc.ck && pc.ck.kmL > 0)) return null;
+    const med = (a) => { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    const gatilho = Math.max(0, med(antes)), poe = Math.min(t.T - gatilho, med(litros));
+    if (!(poe > 1)) return null;
+    const precoL = pc.ck.v * pc.ck.kmL * fp, h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate();
+    const gasta = (d) => (pc.kmDia * k * (peso ? peso[d.getDay()] : 1)) / pc.ck.kmL;
+    // os litros do tanque valem no dia do último KM: os dias depois dele, até hoje, já foram rodados
+    const cad = cadeiaKm(car.id), ultKm = cad.length ? cad[cad.length - 1].d : t.data;
+    let nivel = t.litros, valor = 0;
+    for (let d = new Date((ultKm > t.data ? ultKm : t.data) + "T12:00"), hojeS = today(); ;) {
+      d.setDate(d.getDate() + 1);
+      if (dStr(d) > hojeS) break;
+      nivel -= gasta(d);
+    }
+    const lista = [];
+    for (let i = 1; i <= N - h.getDate(); i++) {
+      const d = new Date(h.getFullYear(), h.getMonth(), h.getDate() + i);
+      nivel -= gasta(d);
+      if (nivel <= gatilho) {
+        const l = Math.min(t.T - Math.max(0, nivel), poe);
+        nivel = Math.max(0, nivel) + l; valor += l * precoL;
+        lista.push({ data: dStr(d), valor: l * precoL, car: car.id });
+      }
+    }
+    return { valor, lista };
+  }
+
+  // linhas do quadro "Previsão do mês": faixa, parte de cada combustível, próximo abastecimento e a correção pelo histórico
+  function dicaPrev(pc, cm) {
+    const linhas = [];
+    if (pc.faixa) linhas.push("entre " + brl(pc.faixa[0]) + " e " + brl(pc.faixa[1]));
+    if (Object.keys(pc.porComb).length > 1) linhas.push(Object.entries(pc.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v)).join(" · "));
+    if (pc.porAbast) linhas.push(pc.abast.length ? "abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "sem abastecer até o fim do mês");
+    else if (!linhas.length) linhas.push("gasto até hoje + " + brl(pc.combDia) + " por dia");
+    const pct = (f) => (f < 1 ? "−" : "+") + num(Math.abs(f - 1) * 100) + "%";
+    const aj = [[pc.cal, "histórico"], [pc.ganhos, "ganhos"], [pc.preco, "preço"]].filter(([f]) => Math.abs(f - 1) >= 0.03);
+    if (aj.length) linhas.push("ajuste: " + aj.map(([f, n]) => n + " " + pct(f)).join(", "));
+    return linhas.join("<br>");
+  }
   // Previsão do combustível do mês:
-  //   gasto até hoje + custo dos km que faltam (pelos dias que você costuma rodar)
+  //   pelos abastecimentos (com o tamanho do tanque e 3 abastecimentos com nível): gasto até hoje + os
+  //   abastecimentos que ainda cabem no mês;
+  //   senão pelo consumo: gasto até hoje + custo dos km que faltam (pelos dias que você costuma rodar)
   //   − o combustível que já está no tanque (já foi pago) + o que costuma sobrar no tanque no fim do mês.
+  // Os km que faltam são corrigidos pelo erro das previsões dos meses anteriores (calibracao).
   // A faixa sai de quanto os seus km por semana variaram nas últimas 8 semanas.
   function previsaoComb(gastoMes) {
     const cd = custoDiario(), dr = diasRestantesMes();
     if (!(cd.combDia > 0)) return null;
-    const futuro = cd.combDia * dr;
-    let ajuste = 0, sd2 = 0;
+    const futuro = cd.combDia * dr, cal = calibracao(), fg = fatorGanhos(), k = cal.k * fg, peso = pesoDiasSemana();
+    let fpSoma = 0, fpPeso = 0;
+    let ajuste = 0, sd2 = 0, bruto = 0, falta = 0, porAbast = false;
+    const abast = [];
     for (const car of carros()) {
       const t = tanqueAgora(car);
-      if (t && t.medioValor != null) ajuste += Math.min(t.valor, futuro) - t.medioValor;
       const pc = cd.porCarro.find((x) => x.id === car.id);
-      if (!pc) continue;
+      const aj = t && t.medioValor != null ? Math.min(t.valor, pc ? pc.dia * dr : futuro) - t.medioValor : 0;
+      ajuste += aj;
+      if (!pc) { bruto -= aj; falta -= aj; continue; }
+      bruto += pc.dia * dr - aj;
+      const fp = fatorPreco(car, pc.ck && pc.ck.porComb, dr);
+      fpSoma += fp * pc.dia; fpPeso += pc.dia;
+      const sim = t ? simulaAbast(car, t, pc, peso, k, fp) : null;
+      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += pc.dia * dr * k * fp - aj;
       // km por semana nas últimas 8 semanas (só semanas com KM antes e depois)
       const cad = cadeiaKm(car.id), sem = [];
       for (let k = 8; k >= 1; k--) {
@@ -1556,15 +1733,21 @@ td { padding: 10px 6px; }
       if (sem.length >= 4) {
         const m = sem.reduce((a, b) => a + b, 0) / sem.length, dp = Math.sqrt(sem.reduce((a, b) => a + (b - m) ** 2, 0) / (sem.length - 1));
         const ckm = pc.dia / (m / 7 || 1); // custo por km deste carro
-        sd2 += (ckm * dp) ** 2 * (dr / 7);
+        sd2 += (ckm * k * dp) ** 2 * (dr / 7);
       }
     }
-    const valor = Math.max(gastoMes, gastoMes + futuro - ajuste);
+    const valor = Math.max(gastoMes, gastoMes + falta);
     const margem = Math.sqrt(sd2);
-    const faixa = margem > valor * 0.03 ? [Math.max(gastoMes, valor - margem), valor + margem] : null;
+    let faixa = margem > valor * 0.03 ? [Math.max(gastoMes, valor - margem), valor + margem] : null;
+    // um abastecimento previsto nos últimos 3 dias do mês pode passar para o mês seguinte: a faixa mostra isso
+    abast.sort((a, b) => a.data.localeCompare(b.data));
+    const fimMes = dStr(new Date(new Date().getFullYear(), new Date().getMonth() + 1, -2));
+    const tarde = abast.filter((a) => a.data >= fimMes).reduce((a, x) => a + x.valor, 0);
+    if (tarde > 0) faixa = [Math.max(gastoMes, Math.min(faixa ? faixa[0] : valor, valor - tarde)), faixa ? faixa[1] : valor];
     // cada combustível com sua parte do que falta
     const fat = futuro > 0 ? (valor - gastoMes) / futuro : 0;
-    return { valor, faixa, dr, porComb: Object.fromEntries(Object.entries(cd.porComb).map(([c, v]) => [c, v * dr * fat])), combDia: cd.combDia, tanque: ajuste };
+    return { valor, faixa, dr, porComb: Object.fromEntries(Object.entries(cd.porComb).map(([c, v]) => [c, v * dr * fat])), combDia: cd.combDia,
+      tanque: ajuste, bruto: Math.max(0, bruto), k, cal: cal.k, meses: cal.n, ganhos: fg, preco: fpPeso > 0 ? fpSoma / fpPeso : 1, abast, porAbast };
   }
   function custoDiario() {
     const DM = 30.44;
@@ -1582,7 +1765,7 @@ td { padding: 10px 6px; }
         const dia = rk.kmDia * ck.v;
         for (const [c, v] of Object.entries(ck.porComb)) porComb[c] = (porComb[c] || 0) + rk.kmDia * v;
         comb += dia; kmDiaTot += rk.kmDia; combNome = ck.nome.toLowerCase();
-        porCarro.push({ nome: nomeCarro(car), id: car.id, dia });
+        porCarro.push({ nome: nomeCarro(car), id: car.id, dia, kmDia: rk.kmDia, ck });
       }
       else faltam.push(nomeCarro(car));
     }
@@ -2575,6 +2758,11 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 10, data: "2026-11-04", itens: [
+      "Previsão do mês pelos abastecimentos: com o tamanho do tanque, o app calcula quando você vai abastecer de novo e soma os abastecimentos que ainda cabem no mês.",
+      "O app aprende com o próprio erro: guarda a previsão de cada dia e, no fim do mês, corrige sozinho se ela saiu alta ou baixa.",
+      "A previsão também acompanha os ganhos do mês, ignora férias e dias parados na média de km, e segue a tendência do preço da ANP na sua cidade.",
+    ] },
     { v: 9, data: "2026-11-04", itens: [
       "Novo no Início: a mistura atual do tanque, com quanto há de gasolina e de etanol, os litros estimados e a confiança da estimativa.",
       "Melhor opção para economizar: qual combustível sai mais barato por km no seu carro, quanto por cento, e até que preço o etanol compensa.",

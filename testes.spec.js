@@ -917,3 +917,71 @@ test("abastecimento com mais litros que o tanque vira aviso", async ({ page }) =
   await abrir(page, dados({ lancamentos: [ab(-10, 10000, 40), ab(-1, 10500, 55)], carros: [{ id: "principal", tanque: 40 }] }));
   await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um abastecimento" })).toContainText("55,0 L, mais que o tanque de 40 L");
 });
+
+// ----- previsão do mês: abastecimentos, histórico, ganhos, folgas e preço -----
+function dia15(page) {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 15, 15);
+  const d15 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  return { y, mo, base, d15, prevYm: d15(-20).slice(0, 7) };
+}
+const brlT = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// 4 tanques cheios de 40 L a cada 10 dias (48 km por dia, 12 km/l, R$ 6,25): o tanque sempre chega vazio
+const quatroTanques = (d15) => [-31, -21, -11, -1].map((d, i) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km: 10000 + 480 * i, ts: 100 + i }));
+
+test("previsão do mês pelos abastecimentos que ainda cabem no mês", async ({ page }) => {
+  const { base, d15, mo } = dia15(page);
+  await page.clock.setFixedTime(base);
+  await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }));
+  // encheu no dia 14; 4 L por dia: vazio no dia 24, quando entra outro tanque de R$ 250. Gasto até hoje R$ 500.
+  const tile = page.locator("#tab-inicio .tile").nth(1);
+  await expect(tile.locator(".v")).toHaveText(brlT(750));
+  await expect(tile).toContainText("abastecer dia 24/" + String(mo).padStart(2, "0"));
+});
+
+test("previsão do mês aprende com o erro dos meses anteriores e guarda a de hoje", async ({ page }) => {
+  const { base, d15, prevYm } = dia15(page);
+  await page.clock.setFixedTime(base);
+  // no mês passado o app previa R$ 625 para o resto do mês e foram R$ 500: previsões 20% altas.
+  // Com um mês só, a correção fica pela metade (≈ −11%).
+  const prevHist = { [prevYm]: [1, 2, 3, 4, 5].map((d) => [d, 0, 625]) };
+  await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }, { prevHist }));
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText("ajuste: histórico −11%");
+  await expect.poll(async () => page.evaluate(([k, b]) => {
+    const h = JSON.parse(localStorage.getItem(k))[b].prevHist || {};
+    return Object.keys(h).length;
+  }, [CHAVE, BASE])).toBe(2);
+});
+
+test("previsão do mês acompanha os ganhos do mês", async ({ page }) => {
+  const { base, d15 } = dia15(page);
+  await page.clock.setFixedTime(base);
+  // R$ 200 por dia nas semanas antes do mês e R$ 100 por dia neste mês: está rodando menos
+  const ganhos = [];
+  for (let n = -60; n < 0; n++) {
+    const d = d15(n);
+    ganhos.push({ data: d, tipo: "ganho", cat: "Uber", trabalho: true, valor: d.slice(0, 7) === d15(0).slice(0, 7) ? 100 : 200, ts: 1000 + n });
+  }
+  await abrir(page, dados({ lancamentos: [...quatroTanques(d15), ...ganhos], carros: [{ id: "principal", tanque: 40 }] }));
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/ganhos −\d+%/);
+});
+
+test("km por dia não conta os dias de folga longa", async ({ page }) => {
+  const g = (n) => ({ data: dia(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: 150, ts: 500 + n });
+  const ganhos = [];
+  for (let n = -30; n <= 0; n++) if (n < -20 || n > -10) ganhos.push(g(n));
+  const lav = (d, km) => ({ data: dia(d), tipo: "gasto", cat: "Lavagem", valor: 30, km, ts: 100 + d });
+  // 800 km em 30 dias, com 11 dias parados no meio: 800 ÷ 19 = 42 km por dia (e não 27)
+  await abrir(page, dados({ lancamentos: [lav(-30, 10000), lav(0, 10800), ...ganhos] }));
+  await aba(page, "carro");
+  await expect(page.locator("#tab-carro .odo-ritmo")).toContainText("42 km por dia");
+});
+
+test("previsão do mês usa a tendência do preço da ANP", async ({ page }) => {
+  const { base, d15 } = dia15(page);
+  await page.clock.setFixedTime(base);
+  // gasolina subindo R$ 0,30 por semana em SP nas últimas 6 semanas
+  const semanas = [5, 4, 3, 2, 1, 0].map((k, i) => ({ fim: d15(-10 - 7 * k), estados: { SP: { Gasolina: 6 + 0.3 * i } }, municipios: {} }));
+  await page.route("**/dados/anp.json", (r) => r.fulfill({ json: { semana: { inicio: d15(-16), fim: d15(-10) }, estados: { SP: { nome: "São Paulo", precos: { Gasolina: { medio: 7.5 } } } }, municipios: {}, historico: { semanas } } }));
+  await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }, { cidade: { uf: "SP", nome: "São Paulo" } }));
+  await expect(page.locator("#tab-inicio .tile").nth(1)).toContainText(/preço \+\d+%/);
+});
