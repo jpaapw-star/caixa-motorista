@@ -408,6 +408,22 @@ td { padding: 10px 6px; }
 .sheet-panel::before { content: ""; justify-self: center; width: 36px; height: 5px; border-radius: 3px; background: var(--line); margin: -8px 0 -6px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sheet-panel { background: var(--surface); } }
 :root[data-theme="dark"] .sheet-panel { background: var(--surface); }
+/* sem cara de painel gerado: rótulos em frase (não em maiúsculas espaçadas), destaque do mês sem caixa e sem
+   degradê, títulos dos cartões como títulos de verdade */
+.label, .fld > span, th { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; }
+.placa { background: transparent; box-shadow: none; color: var(--ink); border-radius: 0; }
+.placa-in { padding: 2px 0 4px; gap: 4px; }
+.placa .label { color: var(--muted); font-size: 15px; font-weight: 500; }
+.placa-row, .placa-prev { color: var(--muted); }
+.lucro { font-size: 52px; }
+.lucro.pos { color: var(--ganho); }
+.lucro.neg { color: var(--gasto); }
+.card > .label:first-child, .card > .split:first-child > .label { font: 600 17px/1.25 var(--f-disp); color: var(--ink); letter-spacing: -.01em; }
+.hoje { padding: 0 2px; }
+.qr { align-items: center; }
+/* etiquetas e destaques em cinza: verde só para dinheiro */
+.tag-best { color: var(--muted); background: var(--fill); font-weight: 600; }
+.cmp-out, .cmp-out.eta, .cmp-out.gas { border: 0; border-left: 0; background: var(--fill); }
 @media (max-width: 380px) { .lucro { font-size: 40px; } .month b { min-width: 96px; } .brand { font-size: 17px; } }
 </style>
 
@@ -1062,7 +1078,7 @@ td { padding: 10px 6px; }
     return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
       <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%, vazio ${pv}% do tanque"><i class="g" style="width:${(G / t.T) * 100}%"></i><i class="e" style="width:${(E / t.T) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / t.T) * 100}%"></i>` : ""}</div>
       <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:center"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span><span style="text-align:right"><span class="label">Vazio</span><br><b class="num">${pv}%</b> <small>${num(vazio, 1)} L</small></span></div>
-      ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}% · a gasolina já tem ${Math.round(ETANOL_NA_GASOLINA * 100)}% de etanol</small>` : ""}
+      ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}%</small>` : ""}
       <small class="num" style="color:var(--muted)">${quando}</small>
       ${baixa ? `<p class="note" style="margin:0">Estimativa de mistura ainda não confiável: ${esc(t.motivos.join("; ") || "poucos dados")}.</p>` : t.conf === "média" && t.motivos.length ? `<p class="note" style="margin:0">Aproximação: ${esc(t.motivos.join("; "))}.</p>` : ""}
       ${t.conf !== "alta" && t.dicas.length ? `<p class="note" style="margin:0"><b>Para melhorar a confiança:</b> ${esc(t.dicas.join("; "))}.</p>` : ""}
@@ -1117,10 +1133,10 @@ td { padding: 10px 6px; }
     const ds = diasDaSemana();
     if (!ds) return "";
     const ord = ds.slice().sort((a, b) => b.m - a.m), mel = ord[0], pio = ord[ord.length - 1], top = mel.m;
+    if (!(mel.m >= pio.m * 1.1)) return ""; // dias parecidos: nada a dizer
     return `<div class="card"><div class="sec-h"><h2>Dias da semana</h2></div>
-      <p class="note" style="margin:0"><b style="color:var(--ink)">${DSEM[mel.i]} rende mais: ${brl(mel.m)}</b> por dia trabalhado. ${DSEM[pio.i]} rende menos: ${brl(pio.m)}.</p>
-      <div class="bars">${ds.map((x) => `<div class="bar-row"><span>${DSEM[x.i]}</span><span class="num">${brl(x.m)}</span><div class="track"><i style="width:${(x.m / top) * 100}%;background:var(--ganho)"></i></div></div>`).join("")}</div>
-      <small style="color:var(--muted)">Média de cada dia trabalhado nas últimas 12 semanas.</small></div>`;
+      <p class="note" style="margin:0"><b style="color:var(--ink)">${DSEM[mel.i]} rende mais: ${brl(mel.m)}</b> por dia trabalhado. ${DSEM[pio.i]} rende menos: ${brl(pio.m)}. Últimas 12 semanas.</p>
+      <div class="bars">${ds.map((x) => `<div class="bar-row"><span>${DSEM[x.i]}</span><span class="num">${brl(x.m)}</span><div class="track"><i style="width:${(x.m / top) * 100}%;background:${x === mel ? "var(--ganho)" : "var(--muted)"}"></i></div></div>`).join("")}</div></div>`;
   }
   function renderInicio() {
     const s = stats(S.ym);
@@ -1166,7 +1182,7 @@ td { padding: 10px 6px; }
       const { de, para, dd } = sus[sus.length - 1];
       const src = para.src || {};
       alertas.unshift({ nome: "Confira um KM" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
-        txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. O ${num(para.k)} está ${src.onde || "nos seus registros"} e fica fora das contas até você corrigir.` });
+        txt: `De ${num(de.k)} em ${dBR(de.d).slice(0, 5)} para ${num(para.k)} em ${dBR(para.d).slice(0, 5)}: ${para.k < de.k ? "o KM voltou" : `${num(para.k - de.k)} km em ${dd < 1 ? "um dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`}. Está ${src.onde || "nos seus registros"}.` });
     });
     const { lucroDia } = s;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
@@ -1192,7 +1208,8 @@ td { padding: 10px 6px; }
       </div></div>
       ${jornadaHTML()}
       ${hoje.ganhos > 0 || hoje.D.length ? `<div class="hoje"><span>Hoje: ganhou <b class="num">${brl(hoje.ganhos)}</b></span><span>gastou <b class="num">${brl(hoje.gastos)}</b></span></div>` : ""}
-      ${extras.length ? `<button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês <span class="seta">${trabAberto ? "▴" : "▾"}</span></h2>${resumoTrab}</button>` : `<div class="sec-h"><h2>Trabalho no mês</h2>${resumoTrab}</div>`}
+      ${alertas.length ? `<div class="alerts">${alertas.map((a) => `<button class="alert ${a.st}" ${a.kmfix ? `data-kmfix="${esc(a.kmfix)}"` : `data-goto="${a.tab || "carro"}"`}${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`).join("")}</div>` : ""}
+      ${extras.length ? `<button class="sec-h sec-btn" id="trabMais" aria-expanded="${trabAberto}"><h2>Trabalho no mês</h2>${resumoTrab}</button>` : `<div class="sec-h"><h2>Trabalho no mês</h2>${resumoTrab}</div>`}
       <div class="metrics">
         ${(() => {
           const [yy, mm] = S.ym.split("-").map(Number), N = new Date(yy, mm, 0).getDate();
@@ -1210,7 +1227,7 @@ td { padding: 10px 6px; }
       ${extras.length ? `<button class="ver-mais" id="trabMais2">${trabAberto ? "Mostrar menos" : "Ver mais números do mês"}</button>` : ""}
       ${kv ? `<div class="card"><span class="label">Cada km rodado</span>
         <div class="kv3 num"><span><small>te dá</small><b>${brl(kv.da)}</b></span><span><small>custa</small><b>${brl(kv.cu)}</b></span><span><small>sobra</small><b class="${kv.sobra >= 0 ? "txt-g" : "txt-x"}">${brl(kv.sobra)}</b></span></div>
-        <p class="note" style="margin:0">Corrida que paga menos de ${brl(kv.cu)} por km dá prejuízo.</p></div>` : ""}
+        <p class="note" style="margin:0">Abaixo de ${brl(kv.cu)} por km, a corrida dá prejuízo.</p></div>` : ""}
       ${tanqueHTML()}
       <div class="caixa">
         <div class="split"><span class="label">Para manter ${variosCarros() ? "os carros" : "o carro"}</span><button class="link-btn" data-goto="carro" data-sub="custos">Detalhes</button></div>
@@ -1223,8 +1240,6 @@ td { padding: 10px 6px; }
         ${pv.proximo ? `<p class="note" style="margin:0">Próximo gasto: ${esc(pv.proximo.nome)} em ${mesAno(pv.proximo.data)}, ${brl(pv.proximo.valor)}.</p>` : ""}
         <div class="btn-row"><button class="btn sm primary" id="addSep"${S.offline ? " disabled" : ""}>Separei dinheiro</button></div>
       </div>
-      ${alertas.length ? `<div class="sec-h"><h2>Avisos</h2></div>
-      <div class="alerts">${alertas.map((a) => `<button class="alert ${a.st}" ${a.kmfix ? `data-kmfix="${esc(a.kmfix)}"` : `data-goto="${a.tab || "carro"}"`}${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`).join("")}</div>` : ""}
     `;
   }
 
@@ -1293,6 +1308,7 @@ td { padding: 10px 6px; }
     const maiorParada = (() => { const p = {}; base.forEach((x) => { if (Number(x.litros) > 0 && !FORA.has(x.comb)) { const k = x.data + "|" + (Number(x.km) || x.id); p[k] = (p[k] || 0) + Number(x.litros); } }); return Math.max(0, ...Object.values(p)); })();
     const T = Number(car.tanque) > 0 ? Number(car.tanque) : maiorParada > 20 ? Math.round(maiorParada * 1.1) : 50;
     const kmOk = (f) => f.km > 0 && !sus.has(f.data + "|" + Number(f.km));
+    const curva = curvaPonteiro(base, T);
     // KM estimado de um dia sem KM anotado: entre as anotações de antes e de depois (meio-dia),
     // ou, sem anotação depois, a última anotação mais os dias × km por dia
     const cadK = cadeiaKm(carId), rkK = ritmoKm(carId);
@@ -1360,7 +1376,15 @@ td { padding: 10px 6px; }
             let rodou = kmOk(f) && ultKm > 0 && f.km >= ultKm ? Math.max(0, f.km - ref) : null, est = false;
             // parcial sem KM (ou com KM errado): os km desde o último KM saem das anotações em volta ou dos dias
             if (rodou == null && ultKm > 0 && nivel != null) { const ke = kmEstimado(f.data); if (ke != null) { rodou = Math.max(0, ke - ref); est = true; kmRef = Math.max(ref, ke); f.kmE = ke; } }
-            const antesL = nivel != null && rodou != null && mix ? Math.max(0, nivel - (rodou * partLiq) / kmlDe(mix)) : null;
+            let antesL = nivel != null && rodou != null && mix ? Math.max(0, nivel - (rodou * partLiq) / kmlDe(mix)) : null;
+            // ponteiro lido na foto do painel antes de abastecer: corrige o nível pela curva do seu carro, com o peso
+            // da incerteza dele (no começo pequeno; cresce quando a curva já foi aprendida)
+            const pt = f.ponteiro != null && f.ponteiro !== "" ? Number(f.ponteiro) : NaN;
+            if (pt >= 0 && pt <= 1 && mix) {
+              const g = curva.nivel(pt), sg = curva.sd;
+              if (antesL != null) { const sk = (est ? 0.1 : 0.05) * T, w = (sk * sk) / (sk * sk + sg * sg); antesL += (g - antesL) * w; f.usouPonteiro = w; }
+              else if (curva.n >= 3) { antesL = g; f.usouPonteiro = 1; }
+            }
             parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false, incAntes: inc, semRefAntes: semRef, est, estAntes: kmEst };
             if (kmOk(f)) { ultKm = Number(f.km); kmRef = ultKm; }
           }
@@ -1589,6 +1613,34 @@ td { padding: 10px 6px; }
     }
     return { Gasolina: { kml: a.kg, conf: a.cg }, Etanol: { kml: a.ke, conf: a.ce }, naoEncheu };
   }
+  // ----- ponteiro de combustível (foto do painel) -----
+  // O ponteiro não é linear e cada carro tem a sua curva (formato do tanque, boia, calibragem de "cheio"); o erro
+  // medido fica em 3% a 8% do tanque. Por isso o app aprende a curva: cada foto antes de encher até o bico dá um par
+  // real (posição do ponteiro, litros que havia = tanque − litros que entraram). Com 3 pares ou mais: reta pelos
+  // mínimos quadrados (inclinação entre 0,6 e 1,4) e incerteza pela sobra dos pares (no mínimo 3% do tanque).
+  // Antes disso: ponteiro = fração do tanque, com incerteza de 10% do tanque. Ponteiro em "cheio" (95% ou mais)
+  // não entra na curva: só diz que há 85% ou mais.
+  function curvaPonteiro(base, T) {
+    const paradas = {};
+    base.forEach((x) => {
+      if (!(Number(x.litros) > 0) || FORA.has(x.comb)) return;
+      const k = x.data + "|" + (Number(x.km) || x.id), p = paradas[k] || (paradas[k] = { L: 0, cheio: false, pt: null });
+      p.L += Number(x.litros); p.cheio = p.cheio || x.cheio !== false;
+      if (x.ponteiro != null && x.ponteiro !== "" && Number(x.ponteiro) >= 0) p.pt = Number(x.ponteiro);
+    });
+    const pares = Object.values(paradas).filter((p) => p.cheio && p.pt != null && p.pt < 0.95 && p.L <= T * 1.05).map((p) => ({ x: p.pt, y: Math.max(0, T - p.L) / T }));
+    let a = 0, b = 1, sd = 0.1;
+    if (pares.length >= 3) {
+      const n = pares.length, mx = pares.reduce((s, p) => s + p.x, 0) / n, my = pares.reduce((s, p) => s + p.y, 0) / n;
+      const sxx = pares.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = pares.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+      b = sxx > 0.01 ? Math.min(1.4, Math.max(0.6, sxy / sxx)) : 1;
+      a = my - b * mx;
+      const res = pares.reduce((s, p) => s + (p.y - a - b * p.x) ** 2, 0);
+      sd = Math.max(0.03, Math.sqrt(res / Math.max(1, n - 2)));
+    }
+    const nivel = (p) => { const f = Math.min(1, Math.max(0, a + b * p)); return (p >= 0.95 ? Math.max(0.85, f) : f) * T; };
+    return { nivel, sd: sd * T, n: pares.length, a, b };
+  }
   // ----- médias de qualquer número de combustíveis (carro com GNV, híbrido de tomada, elétrico) -----
   // Cada trecho de tanque cheio a tanque cheio: km = Σ volume × km por unidade de cada combustível (os litros de
   // cada líquido pela mistura, mais os m³ de GNV e os kWh que entraram no trecho). O que fica no cilindro ou na
@@ -1721,7 +1773,7 @@ td { padding: 10px 6px; }
         <span>${outro ? `Cada km sai ${brl(outro.custoKm - b.custoKm)} mais barato que com ${outro.comb.toLowerCase()}.` : `Cada km custa ${brl(b.custoKm)}.`}${econ > 1 ? ` No seu ritmo de ${num(rk.kmDia)} km por dia, são uns ${brl(econ)} a menos por mês.` : ""}</span></div>
       ${(() => { const ec = economia(car); return ec ? `<p class="note" style="margin:0">O etanol compensa até <b class="num">${brl(ec.eqEta)}</b> o litro no seu carro.</p>` : ""; })()}
       <div class="bars">${r.validos.map((o, i) => `<div class="split"><span><b>${o.comb}</b>${i === 0 && r.validos.length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${num(o.kml, 1)} km/${o.unid}${o.est ? " (estimado)" : ""}${car.tanque && o.unid === "L" ? ` · tanque cheio ${brl(o.preco * car.tanque)}, rende ${num(o.kml * car.tanque)} km` : ""}</small></span><b class="num">${brl(o.custoKm)}/km</b></div>`).join("")}</div>
-      ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Estimado: com poucos tanques, o etanol conta como 73% do rendimento da gasolina. Fica mais certo a cada tanque cheio com KM.</p>` : ""}
+      ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Estimado: ainda há poucos tanques cheios com KM.</p>` : ""}
       ${r.ops.filter((o) => !o.custoKm && FORA.has(o.comb)).map((o) => `<p class="note" style="margin:0">Para comparar o ${o.comb === "GNV" ? "GNV" : "elétrico"}, anote o KM nos abastecimentos${o.comb === "GNV" ? " de GNV" : " e nas cargas"}.</p>`).join("")}`;
   }
   function calcHTML(car) {
@@ -2415,7 +2467,7 @@ td { padding: 10px 6px; }
         if (pr[c].some((p) => p.rend) && pr[c].every((p) => p.custoKm)) pr[c].sort((a, b) => a.custoKm - b.custoKm);
       });
       const porKm = prCombs.some((c) => pr[c].some((p) => p.rend));
-      const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>${porKm ? "pelo custo por km, com o quanto rende" : "preço pago, o mais recente pesa mais"}</small></div>
+      const postosHTML = `<div class="card"><div class="sec-h"><h2>Postos</h2><small>${porKm ? "por custo por km" : "por preço pago"}</small></div>
         ${prCombs.map((c) => `<div class="posto-grupo"><span class="label">${esc(c)}</span>${pr[c].slice(0, 5).map((p, i) => `<div class="split"><span>${esc(p.posto)}${i === 0 && pr[c].length > 1 ? `<span class="tag-best">${porKm ? "melhor por km" : "mais barato"}</span>` : ""}<br><small>${p.n} ${p.n === 1 ? "abastecimento" : "abastecimentos"} · último em ${dBR(p.ult).slice(0, 5)}${p.rend && Math.abs(p.rend - 1) >= 0.03 ? ` · rende ${num(Math.abs(p.rend - 1) * 100)}% ${p.rend < 1 ? "menos" : "mais"}` : ""}</small></span><b class="num">${brl(p.preco)}/L${porKm && p.custoKm ? `<br><small>${brl(p.custoKm)}/km</small>` : ""}</b></div>`).join("")}</div>`).join("")}</div>`;
       const ckc = combPorKm(car), custoComb = ckc ? ckc.v : null;
       const combAut = combPadrao(carId), kmlAut = fd.kmlPor[combAut] || fd.media; // tanque cheio do combustível que você usa
@@ -2453,7 +2505,7 @@ td { padding: 10px 6px; }
           const txt = [
             fs ? (fs.parecidas ? "Para separar a média da gasolina e a do etanol, o app precisa de tanques com misturas diferentes. Rode um tanque com mais etanol, ou mais gasolina, que o normal." : `${fs.tanques === 1 ? "Falta 1 tanque cheio" : `Faltam ${fs.tanques} tanques cheios`} com KM para separar a média da gasolina e a do etanol. Até lá, vale a média geral.`) : "",
             ne.length ? (ne.length === 1 ? `O abastecimento de ${dBR(ne[0]).slice(0, 5)} parece não ter enchido o tanque igual aos outros. O app juntou esse tanque com o seguinte, e o erro se cancelou.` : `Os abastecimentos de ${ne.map((d) => dBR(d).slice(0, 5)).join(", ")} parecem não ter enchido o tanque igual aos outros. O app juntou cada um com o tanque seguinte, e o erro se cancelou.`) : "",
-            mostraConf ? "Para a média firmar mais rápido: encha até o bico desligar, sem completar." : "",
+            mostraConf ? "Encha até o bico desligar para a média firmar." : "",
           ].filter(Boolean);
           const pedeTanque = fd.semTanque && (fs || Object.keys(fd.kmlConf).length > 1);
           return (txt.length ? `<p class="note" style="margin:0">${txt.join(" ")}</p>` : "") +
@@ -2572,7 +2624,7 @@ td { padding: 10px 6px; }
     const sem = S.anp.semana && S.anp.semana.inicio ? "semana de " + dBR(S.anp.semana.inicio).slice(0, 5) + " a " + dBR(S.anp.semana.fim).slice(0, 5) : "";
     if (!l) {
       return `<div class="card"><div class="sec-h"><h2>Preço na sua cidade</h2></div>
-        <p class="note" style="margin:0">Compare o que você paga com a média da sua cidade, pela pesquisa semanal de preços da ANP.</p>
+        <p class="note" style="margin:0">Média semanal da ANP na sua cidade.</p>
         <div><button class="btn sm primary" id="cidadeBtn"${S.offline ? " disabled" : ""}>Escolher cidade</button></div></div>`;
     }
     // o que você pagou nos últimos 30 dias, por combustível
@@ -3272,8 +3324,8 @@ td { padding: 10px 6px; }
         <div class="exports"><button class="btn sm ghost" id="verTut">Ver o tutorial</button><button class="btn sm ghost" id="verNov">Novidades</button></div></div>
       ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
         <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
-          <div><p class="note" style="margin:0">Mostre este código para outro motorista apontar a câmera do celular, ou mande o link.</p><p class="qr-link">${esc(linkApp())}</p><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
-      ${S.downloads ? `<div class="card"><div class="sec-h"><h2>Levar para a planilha</h2></div><p class="note" style="margin:0">Baixe em CSV. As colunas batem com a planilha: copie e cole na aba Lançamentos (ou Dias de trabalho) a partir da coluna A.</p>
+          <div><p class="note" style="margin:0">Aponte a câmera do outro celular aqui, ou mande o link.</p><p class="qr-link">${esc(linkApp())}</p><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
+      ${S.downloads ? `<div class="card"><div class="sec-h"><h2>Levar para a planilha</h2></div><p class="note" style="margin:0">Arquivo CSV para colar na planilha, a partir da coluna A.</p>
         <div class="exports"><button class="btn sm ghost" id="expLanc">Exportar lançamentos</button><button class="btn sm ghost" id="expDias">Exportar dias de trabalho</button></div></div>` : ""}
     `;
     if (S.local) desenharQR();
@@ -3326,6 +3378,10 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 13, data: "2026-11-04", itens: [
+      "Foto do painel: no lançamento, \"Ler de um print, cupom ou painel\" preenche o KM e guarda o nível do combustível. Com o tempo o app aprende o ponteiro do seu carro e acerta melhor a mistura do tanque.",
+      "Visual mais limpo: o lucro do mês sem caixa em volta, avisos no topo, títulos sem letras maiúsculas e textos mais curtos.",
+    ] },
     { v: 12, data: "2026-11-04", itens: [
       "Lista de abastecimentos mais enxuta: data, combustível, km/l e valor. Toque num abastecimento para ver o resto.",
       "\"Hoje: ganhou / gastou\" aparece só nos dias em que você trabalhou.",
@@ -3477,9 +3533,9 @@ td { padding: 10px 6px; }
       const showKm = KM_CATS.includes(F.cat);
       return `
         <div><h2>${F.id ? "Editar lançamento" : "Novo lançamento"}</h2>${fInfo ? `<p class="note num" id="fInfo">${esc(fInfo)}</p>` : ""}${F.note ? `<p class="note">${esc(F.note)}</p>` : ""}</div>
-        ${S.canImg && !F.id ? `<label class="btn-print" for="printIn">${ICON.cam} Ler de um print ou cupom</label>
+        ${S.canImg && !F.id ? `<label class="btn-print" for="printIn">${ICON.cam} Ler de um print, cupom ou painel</label>
           <input type="file" id="printIn" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
-          <p class="hint" id="printMsg">${esc(F.printMsg || "Mande o print dos ganhos do app ou a foto do cupom. O Claude preenche e você confere.")}</p>` : ""}
+          <p class="hint" id="printMsg">${esc(F.printMsg || "Mande o print dos ganhos, a foto do cupom ou a do painel (antes de abastecer, com o carro ligado). O app preenche e você confere.")}</p>` : ""}
         <div class="seg"><button type="button" data-tipo="ganho" aria-pressed="${F.tipo === "ganho"}">Ganho</button><button type="button" data-tipo="gasto" aria-pressed="${F.tipo === "gasto"}">Gasto</button></div>
         <div class="chips">${(F.id && !F.trocaCat ? cats.filter((c) => c.n === F.cat) : cats).map((c) => `<button type="button" class="chip" data-cat="${esc(c.n)}" aria-pressed="${F.cat === c.n}">${esc(c.n)}</button>`).join("")}${F.id && !F.trocaCat ? `<button type="button" class="chip" id="trocaCat">Trocar categoria</button>` : ""}</div>
         ${variosCarros() ? `<div class="fld"><span>Carro</span><div class="chips">${carros().map((c) => `<button type="button" class="chip" data-lcar="${esc(c.id)}" aria-pressed="${F.carId === c.id}">${esc(nomeCarro(c))}</button>`).join("")}</div></div>` : ""}
@@ -3492,6 +3548,7 @@ td { padding: 10px 6px; }
         ${showKm ? `<div class="row2">${F.cat === "Combustível" ? `<label class="fld"><span>${F.comb === "GNV" ? "m³" : F.comb === "Elétrico" ? "kWh" : "Litros"}</span><input id="fLit" inputmode="decimal" placeholder="0,0" value="${esc(F.litros)}"></label>` : ""}
           <label class="fld"><span>KM no painel</span><input id="fKm" type="number" inputmode="numeric" placeholder="${kmAtual(F.carId) ? num(kmAtual(F.carId)) : "Ex.: 45900"}" value="${esc(F.km)}"></label></div>` : ""}
         ${F.cat === "Combustível" && !FORA.has(F.comb) ? `<label class="check"><input type="checkbox" id="fCheio"${F.cheio !== false ? " checked" : ""}><span>Enchi o tanque<br><small>Até o bico desligar. Sem encher, anote o KM mesmo assim.</small></span></label>` : ""}
+        ${F.cat === "Combustível" && F.ponteiro != null && F.ponteiro !== "" ? `<p class="hint" style="margin:0">Combustível antes de abastecer: ${oitavos(Number(F.ponteiro))} (foto do painel).</p>` : ""}
         ${HIST_CATS.includes(F.cat) && !F.id ? `<div class="fld"><span>Qual serviço?</span><div class="chips">${S.manut.filter((m) => cid(m) === F.carId).map((m) => `<button type="button" class="chip" data-serv-l="${esc(m.id)}" aria-pressed="${F.servId === m.id}">${esc(m.servico)}</button>`).join("")}</div>
           <small class="note" style="margin:0">Escolhendo o serviço, o app aprende quanto custa e de quanto em quanto tempo você faz.</small></div>
           <label class="check"><input type="checkbox" id="fHist"${F.hist !== false ? " checked" : ""}><span>Guardar no histórico do carro<br><small>Fica registrado com a data e o KM para mostrar na hora de vender.</small></span></label>` : ""}
@@ -3536,6 +3593,7 @@ td { padding: 10px 6px; }
         const kmN = intOrNull(F.km); if (kmN && KM_CATS.includes(F.cat)) doc.km = kmN;
         if (!kmConfere(ev.target, err, [doc.km], F.carId)) return;
         const lit = parseDec(F.litros); if (lit > 0 && F.cat === "Combustível") doc.litros = Math.round(lit * 100) / 100;
+        if (F.cat === "Combustível" && F.ponteiro != null && F.ponteiro !== "" && Number(F.ponteiro) >= 0 && Number(F.ponteiro) <= 1) doc.ponteiro = Number(F.ponteiro);
         if (F.cat === "Combustível") { if (F.comb) doc.comb = F.comb; doc.cheio = F.cheio !== false; if (String(F.posto || "").trim()) doc.posto = String(F.posto).trim().slice(0, 60); }
         const guardarHist = HIST_CATS.includes(F.cat) && !F.id && F.hist !== false;
         if (doc.tipo === "ganho" && doc.trabalho) {
@@ -3577,6 +3635,8 @@ td { padding: 10px 6px; }
     });
   }
 
+  // nível do ponteiro em texto: oitavos ("3/8"), "cheio" ou "vazio"
+  const oitavos = (p) => { const k = Math.round(p * 8); return k >= 8 ? "cheio" : k <= 0 ? "vazio" : k % 2 === 0 ? (k === 4 ? "1/2" : k / 2 + "/4") : k + "/8"; };
   async function lerPrint(file, F, draw, b) {
     const msg = b.querySelector("#printMsg");
     const label = b.querySelector(".btn-print");
@@ -3584,15 +3644,25 @@ td { padding: 10px 6px; }
     msg.textContent = "Lendo a imagem… isso leva alguns segundos.";
     const gan = CATS.filter((c) => c.t === "ganho").map((c) => c.n).join(", ");
     const gas = CATS.filter((c) => c.t === "gasto").map((c) => c.n).join(", ");
-    const prompt = `Você recebe uma imagem enviada por um motorista de aplicativo no Brasil. Pode ser um print da tela de ganhos de um app (Uber, 99, inDrive, iFood etc.) ou a foto de um cupom ou nota (posto de combustível, oficina, estacionamento, pedágio, lava-rápido).
+    const prompt = `Você recebe uma imagem enviada por um motorista de aplicativo no Brasil. Pode ser um print da tela de ganhos de um app (Uber, 99, inDrive, iFood etc.), a foto de um cupom ou nota (posto de combustível, oficina, estacionamento, pedágio, lava-rápido) ou a foto do painel do carro.
 Extraia os dados e responda só com um objeto JSON neste formato:
 {"tipo":"ganho" ou "gasto","categoria":"uma das categorias abaixo","valor":número em reais com ponto decimal,"data":"AAAA-MM-DD" ou null,"descricao":"texto curto","litros":número ou null,"combustivel":"Gasolina", "Etanol", "Diesel", "GNV" ou null,"posto":"nome do posto" ou null,"km":número ou null,"corridas":número inteiro ou null,"horas":número decimal ou null}
 Categorias de ganho: ${gan}.
 Categorias de gasto: ${gas}.
-Regras: num print de ganhos, use o total ganho no período mostrado (com gorjetas e promoções); "corridas" é o número de viagens ou entregas e "horas" é o tempo online, se aparecerem; "km" é a distância percorrida, se aparecer. Num cupom de combustível, use a categoria Combustível e preencha "litros" e "combustivel". Se a data não mostrar o ano, use ${today().slice(0, 4)}. Hoje é ${today()}. Se a imagem não for nada disso, responda {"erro":"não reconheci"}.`;
+Regras: num print de ganhos, use o total ganho no período mostrado (com gorjetas e promoções); "corridas" é o número de viagens ou entregas e "horas" é o tempo online, se aparecerem; "km" é a distância percorrida, se aparecer. Num cupom de combustível, use a categoria Combustível e preencha "litros" e "combustivel". Se a data não mostrar o ano, use ${today().slice(0, 4)}. Hoje é ${today()}. Se for a foto do painel do carro, responda só {"painel":true,"km":número do hodômetro total (não o parcial TRIP) ou null,"ponteiro":nível do combustível de 0 (vazio) a 1 (cheio) ou null}. No ponteiro de agulha, leia onde a agulha está entre E/vazio e F/cheio, em oitavos quando der (0,375 = 3/8). No marcador de barrinhas, use barrinhas acesas ÷ total. Não confunda com o ponteiro da temperatura nem com o conta-giros. Se a imagem não for nada disso, responda {"erro":"não reconheci"}.`;
     try {
       const r = await S.sample.json(prompt, { images: [file] });
-      if (!r || typeof r !== "object" || r.erro || !(Number(r.valor) > 0)) {
+      if (r && r.painel) {
+        // painel: só o KM e o ponteiro; o resto do lançamento (valor, litros) continua como está
+        const km = Number(r.km), pt = r.ponteiro == null || r.ponteiro === "" ? NaN : Number(r.ponteiro);
+        if (!(km > 0) && !(pt >= 0 && pt <= 1)) F.printMsg = "Não consegui ler o painel. Tente de novo com o carro ligado e a foto de frente.";
+        else {
+          F.tipo = "gasto"; F.cat = "Combustível"; if (!F.comb) F.comb = combPadrao(F.carId);
+          if (km > 0) F.km = String(Math.round(km));
+          if (pt >= 0 && pt <= 1) F.ponteiro = Math.round(pt * 1000) / 1000;
+          F.printMsg = "Painel lido" + (km > 0 ? ": KM " + num(km) : "") + (pt >= 0 && pt <= 1 ? (km > 0 ? ", " : ": ") + "combustível em " + oitavos(pt) : "") + ". Agora o valor e os litros, ou a foto do cupom.";
+        }
+      } else if (!r || typeof r !== "object" || r.erro || !(Number(r.valor) > 0)) {
         F.printMsg = "Não encontrei um valor nessa imagem. Preencha à mão ou tente outro print.";
       } else {
         F.tipo = r.tipo === "gasto" ? "gasto" : "ganho";
@@ -3846,7 +3916,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const ult = Number(S.settings.ultimoBackup) || 0;
     const dias = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
     if (dias != null && dias < 7) return null;
-    return { nome: "Cópia de segurança", txt: dias == null ? "você ainda não salvou nenhuma" : "a última foi há " + dias + " dias", st: "breve", lbl: temGoogle() ? "Salvar no Google" : "Salvar", tab: "resumo" };
+    return { nome: "Cópia de segurança", txt: dias == null ? "Nenhuma cópia ainda" : "Última há " + dias + " dias", st: "breve", lbl: temGoogle() ? "Salvar no Google" : "Salvar", tab: "resumo" };
   }
   function dadosCopia() {
     const colecoes = {};

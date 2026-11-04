@@ -103,12 +103,45 @@
     },
   };
 
+  // Leitura de fotos (print, cupom, painel) pelo Gemini grátis do Google. A chave do Gemini nunca vem para o
+  // celular: fica num pequeno script do Google (pasta leitor/ do repositório) que recebe a foto e pergunta ao Gemini.
+  // Aqui só fica o endereço desse script (config.js, leitorUrl), que não é segredo.
+  const LEITOR = String((window.CAIXA_CONFIG || {}).leitorUrl || "").trim();
+  const falhaIA = (code) => { const e = new Error(code); e.code = code; return e; };
+  // a foto vai menor (até 1600 px, JPEG): sobe mais rápido e gasta menos da cota
+  async function reduzir(file) {
+    try {
+      const bmp = await createImageBitmap(file), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.85).split(",")[1];
+    } catch (e) {
+      return new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = () => falha(falhaIA("image_rejected")); r.readAsDataURL(file); });
+    }
+  }
+  const leitor = !/^https:\/\/script\.google\.com\//.test(LEITOR) ? null : {
+    async limits() { return { images: true }; },
+    async json(prompt, { images = [] } = {}) {
+      const fotos = await Promise.all(images.map(reduzir));
+      let r;
+      // text/plain evita a pergunta prévia do navegador (o script do Google não responde a ela)
+      try { r = await fetch(LEITOR, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ prompt, fotos }) }); }
+      catch (e) { throw falhaIA("sem_internet"); }
+      if (!r.ok) throw falhaIA("ia");
+      let j;
+      try { j = await r.json(); } catch (e) { throw falhaIA("ia"); }
+      if (j && j.erro) throw falhaIA(j.erro);
+      return j ? j.resposta : null;
+    },
+  };
+
   window.localApp = {
     async use(nome) {
+      if (nome === "sample") return leitor;
       if (nome === "db") return store ? { doc: docRef, collection: colRef, lote: async (ops) => gravarLote(ops) } : null;
       if (nome === "user") return { id: async () => "local" };
       if (nome === "downloads") return downloads;
-      return null; // leitura de print com IA só existe no protótipo dentro do Claude
+      return null;
     },
   };
 })();
