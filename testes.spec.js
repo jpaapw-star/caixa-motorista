@@ -205,6 +205,10 @@ test("consumo por litro e qual combustível colocar", async ({ page }) => {
   await expect(page.locator(".calc-out .cmp-out b").first()).toHaveText("Etanol");
   await page.fill('input[data-pc="Etanol"]', "4,80");
   await expect(page.locator(".calc-out .cmp-out b").first()).toHaveText("Gasolina");
+  // gasolina 6,25 a 12 km/l e etanol 4,45 a ~8,4-8,8 km/l: menos de 3% de diferença por km = empate
+  await page.fill('input[data-pc="Etanol"]', "4,45");
+  await expect(page.locator(".calc-out .cmp-out b").first()).toHaveText("Tanto faz");
+  await expect(page.locator(".calc-out")).not.toContainText("R$ 0,00");
 });
 
 test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = R$ 45,94 por mês, e separar mais não conta duas vezes", async ({ page }) => {

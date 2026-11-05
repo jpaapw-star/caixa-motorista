@@ -1779,19 +1779,23 @@ td { padding: 10px 6px; }
     if (!r.validos.length) {
       const g = r.ops.find((o) => o.comb === "Gasolina"), e = r.ops.find((o) => o.comb === "Etanol");
       if (g && e && g.preco && e.preco) {
-        const razao = e.preco / g.preco, melhor = razao <= 0.7 ? "Etanol" : "Gasolina";
-        return `<div class="cmp-out ${melhor === "Etanol" ? "eta" : "gas"}"><span class="label">Coloque</span><b>${melhor}</b>
+        const razao = e.preco / g.preco, melhor = razao <= 0.7 ? "Etanol" : "Gasolina", empate = Math.abs(razao - 0.7) < 0.02;
+        return `<div class="cmp-out ${empate ? "" : melhor === "Etanol" ? "eta" : "gas"}"><span class="label">${empate ? "Com esses preços" : "Coloque"}</span><b>${empate ? "Tanto faz" : melhor}</b>
           <span>Etanol a ${num(razao * 100)}% da gasolina (compensa até 70%)</span></div>`;
       }
       return `<p class="note" style="margin:0">Digite os preços do posto.</p>`;
     }
     const b = r.melhor, outro = r.validos[1];
     const econ = outro && rk ? (outro.custoKm - b.custoKm) * rk.kmDia * 30.44 : null;
-    return `<div class="cmp-out ${b.comb === "Etanol" ? "eta" : "gas"}"><span class="label">Coloque</span><b>${b.comb}</b>
-        <span>${outro ? `Cada km sai ${brl(outro.custoKm - b.custoKm)} mais barato que com ${outro.comb.toLowerCase()}.` : `Cada km custa ${brl(b.custoKm)}.`}${econ > 1 ? ` No seu ritmo de ${num(rk.kmDia)} km por dia, são uns ${brl(econ)} a menos por mês.` : ""}</span></div>
-      ${(() => { const ec = economia(car); return ec ? `<p class="note" style="margin:0">O etanol compensa até <b class="num">${brl(ec.eqEta)}</b> o litro no seu carro.</p>` : ""; })()}
-      <div class="bars">${r.validos.map((o, i) => `<div class="split"><span><b>${o.comb}</b>${i === 0 && r.validos.length > 1 ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${num(o.kml, 1)} km/${o.unid}${o.est ? " (estimado)" : ""}${car.tanque && o.unid === "L" ? ` · tanque cheio ${brl(o.preco * car.tanque)}, rende ${num(o.kml * car.tanque)} km` : ""}</small></span><b class="num">${brl(o.custoKm)}/km</b></div>`).join("")}</div>
-      ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Estimado: ainda há poucos tanques cheios com KM.</p>` : ""}
+    // diferença em % por km; abaixo de 3% (menor que o erro das médias) é empate
+    const dif = outro ? (outro.custoKm - b.custoKm) / outro.custoKm : 0, empate = outro && dif < 0.03;
+    const linha = !outro ? `${brl(b.custoKm)} por km` : empate ? `${b.comb} sai só ${num(dif * 100)}% mais barato por km` : `${num(dif * 100)}% mais barato por km${econ > 1 ? ` · uns ${brl(econ)} a menos por mês` : ""}`;
+    const ec = economia(car);
+    return `<div class="cmp-out ${empate ? "" : b.comb === "Etanol" ? "eta" : "gas"}"><span class="label">${empate ? "Com esses preços" : "Coloque"}</span><b>${empate ? "Tanto faz" : b.comb}</b>
+        <span>${linha}</span></div>
+      ${ec ? `<p class="note" style="margin:0">Etanol compensa até <b class="num">${brl(ec.eqEta)}</b></p>` : ""}
+      <div class="bars">${r.validos.map((o, i) => `<div class="split"><span><b>${o.comb}</b>${i === 0 && r.validos.length > 1 && !empate ? '<span class="tag-best">mais barato</span>' : ""}<br><small>${num(o.kml, 1)} km/${o.unid}${car.tanque && o.unid === "L" ? ` · tanque ${brl(o.preco * car.tanque)}` : ""}</small></span><b class="num">R$&nbsp;${num(o.custoKm, 3)}/km</b></div>`).join("")}</div>
+      ${r.validos.some((o) => o.est) ? `<p class="note" style="margin:0">Médias ainda estimadas.</p>` : ""}
       ${r.ops.filter((o) => !o.custoKm && FORA.has(o.comb)).map((o) => `<p class="note" style="margin:0">Para comparar o ${o.comb === "GNV" ? "GNV" : "elétrico"}, anote o KM nos abastecimentos${o.comb === "GNV" ? " de GNV" : " e nas cargas"}.</p>`).join("")}`;
   }
   function calcHTML(car) {
@@ -1841,7 +1845,7 @@ td { padding: 10px 6px; }
   function calcForm() {
     const car = carAtivo();
     openForm(() => `
-      <div><h2>Qual combustível colocar?</h2><p class="note">Digite o preço que está na bomba. ${variosCarros() ? "Conta feita para o " + esc(nomeCarro(car)) + "." : "A conta usa o consumo do seu carro."}</p></div>
+      <div><h2>Qual combustível colocar?</h2>${variosCarros() ? `<p class="note">${esc(nomeCarro(car))}</p>` : ""}</div>
       ${calcHTML(car)}
       <div class="sh-actions"><button type="button" class="btn primary" id="fCancel">Fechar</button></div>
     `, (draw, b) => { b.querySelector("#fCancel").onclick = closeSheet; });
@@ -3404,6 +3408,9 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 15, data: "2026-11-05", itens: [
+      "Qual combustível colocar: com diferença menor que 3% por km aparece \"Tanto faz\", e o custo por km mostra 3 casas.",
+    ] },
     { v: 14, data: "2026-11-04", itens: [
       "Menos texto: as telas mostram só os números. Explicações ficam em \"Detalhes\".",
       "Combustível do mês e previsão num quadro só, com a barra do quanto já foi gasto. Toque nele para ver os detalhes da previsão.",
