@@ -55,7 +55,7 @@ jobs:
     name: Testes no Android (Chrome)
     needs: anp
     if: ${{ !cancelled() }} # mesmo se a ANP falhar, o app é testado e publicado com os preços anteriores
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # o Playwright 1.56 ainda não roda no Ubuntu 26.04 (o ubuntu-latest novo)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,7 +92,7 @@ jobs:
     name: Testes no iPhone (Safari)
     needs: anp
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # o Playwright 1.56 ainda não roda no Ubuntu 26.04
     steps:
       - uses: actions/checkout@v7
         with:
