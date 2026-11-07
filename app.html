@@ -1093,6 +1093,7 @@ td { padding: 10px 6px; }
       <details class="mais"><summary>Detalhes</summary><div>
       ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}%</small>` : ""}
       <small class="num" style="color:var(--muted)">${quando}</small>
+      ${t.acerto ? `<small class="num" style="color:var(--muted)">${esc(t.acerto)}.</small>` : ""}
       ${baixa ? `<p class="note" style="margin:0">Estimativa de mistura ainda não confiável: ${esc(t.motivos.join("; ") || "poucos dados")}.</p>` : t.conf === "média" && t.motivos.length ? `<p class="note" style="margin:0">Aproximação: ${esc(t.motivos.join("; "))}.</p>` : ""}
       ${t.conf !== "alta" && t.dicas.length ? `<p class="note" style="margin:0"><b>Para melhorar a confiança:</b> ${esc(t.dicas.join("; "))}.</p>` : ""}
       </div></details>
@@ -1365,6 +1366,8 @@ td { padding: 10px 6px; }
       // inc: parte do tanque que já estava lá antes do primeiro abastecimento anotado (origem desconhecida);
       // semRef: o volume no tanque não é conhecido (início sem tanque cheio, ou parcial sem KM), até o próximo tanque cheio
       let inc = null, semRef = true, kmEst = false;
+      // paradas com o nível de antes calculado: num tanque cheio, o que entrou mostra quanto estava vazio de verdade
+      const paradas = [];
       // KM anotado fora de um abastecimento de líquido: desconta do tanque os km rodados até ali
       const gastaAte = (k) => {
         if (ultKm > 0 && k < ultKm) return;
@@ -1404,11 +1407,13 @@ td { padding: 10px 6px; }
               if (antesL != null) { const sk = (est ? 0.1 : 0.05) * T, w = (sk * sk) / (sk * sk + sg * sg); antesL += (g - antesL) * w; f.usouPonteiro = w; }
               else if (curva.n >= 3) { antesL = g; f.usouPonteiro = 1; }
             }
-            parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false, incAntes: inc, semRefAntes: semRef, est, estAntes: kmEst };
+            parada = { km: Number(f.km) || 0, data: f.data, antes: mix, antesL, add: {}, cheio: false, incAntes: inc, semRefAntes: semRef, est, estAntes: kmEst, fills: [] };
+            paradas.push(parada);
             if (kmOk(f)) { ultKm = Number(f.km); kmRef = ultKm; }
           }
           parada.add[f.comb] = (parada.add[f.comb] || 0) + L;
           parada.cheio = parada.cheio || cheio;
+          parada.fills.push(f);
           const tot = Object.values(parada.add).reduce((a, b) => a + b, 0), cabe = Math.max(0, T - tot);
           let sobra = cabe;
           if (!parada.cheio && parada.antes) {
@@ -1464,6 +1469,16 @@ td { padding: 10px 6px; }
         const eq = Object.entries(f.foraV).reduce((a, [c, v]) => a + v * RAZAO_FORA[c], 0);
         f.foraKm = eq / (f.litrosTrecho + eq);
         if (f.foraKm > 0.05) f.combTrecho = null;
+      }
+      // vazio previsto × o que entrou até o bico desligar. Só vale com o nível de antes conhecido (tanque cheio
+      // antes, KM anotado, sem parcial sem KM no meio) e sem litros a mais que o tanque
+      all.confere = [];
+      for (const p of paradas) {
+        if (!p.cheio || p.antesL == null || p.semRefAntes || p.est || p.estAntes) continue;
+        const real = Object.values(p.add).reduce((a, b) => a + b, 0), prev = T - p.antesL;
+        if (real < 2 || real > T * 1.05) continue;
+        all.confere.push({ data: p.data, prev, real });
+        p.fills.forEach((f) => { f.vazioPrev = prev; f.vazioReal = real; });
       }
       return all;
     };
@@ -1537,7 +1552,21 @@ td { padding: 10px 6px; }
       }
       partKm = partDe({ ...kPartida(kg1), ...kmlPor });
     }
+    // Quanto o app acertou o vazio nos últimos tanques cheios (até 5). Errou para um lado de forma seguida
+    // (gastou mais ou menos que as médias nos últimos tanques: ar-condicionado, trânsito, estação), o gasto
+    // daqui para frente é corrigido pela razão entre o que entrou e o que ele previa, pesando mais os recentes.
+    // A correção fica entre −15% e +15% e só vale com 3 tanques conferidos ou mais.
+    const ajusteVazio = (() => {
+      const c = (all.confere || []).slice(-5);
+      if (c.length < 3) return { n: c.length, fator: 1, erro: null };
+      let sr = 0, sp = 0;
+      c.forEach((x, i) => { const w = Math.pow(0.8, c.length - 1 - i); sr += w * x.real; sp += w * x.prev; });
+      let fator = sp > T * 0.3 ? Math.min(1.15, Math.max(0.85, sr / sp)) : 1;
+      if (Math.abs(fator - 1) < 0.02) fator = 1;
+      return { n: c.length, fator, erro: c.reduce((a, x) => a + Math.abs(x.real - x.prev), 0) / c.length, T };
+    })();
     return {
+      ajusteVazio,
       partKm, partLiq: liqDe(partKm),
       all, trechos, media: media(trechos), ultimo: trechos.length ? trechos[trechos.length - 1].kml : null,
       precoMedio: litTot > 0 ? sum(comL) / litTot : null,
@@ -2036,7 +2065,10 @@ td { padding: 10px 6px; }
     const kmEst = !(ult.km > 0) && rk && !rk.estimativa;
     const temKm = (ult.km > 0 || kmEst) && kmlDe > 0;
     const rodou = !temKm ? 0 : ult.km > 0 ? Math.max(0, kmAtual(car.id) - Number(ult.km)) : Math.max(0, (new Date(today() + "T12:00") - new Date(ult.data + "T12:00")) / 864e5) * rk.kmDia;
-    const litros = Math.min(T, Math.max(0, ult.nivelDepois - (temKm ? (rodou * fd.partLiq) / kmlDe : 0)));
+    const aj = fd.ajusteVazio || { fator: 1, n: 0, erro: null };
+    const litros = Math.min(T, Math.max(0, ult.nivelDepois - (temKm ? (rodou * fd.partLiq * aj.fator) / kmlDe : 0)));
+    // o vazio previsto vem acertando o que entra nos tanques cheios (erro médio até 6% do tanque): o gasto pelos km é confiável
+    const acerta = aj.n >= 3 && aj.erro != null && aj.erro <= 0.06 * T;
     const porComb = Object.fromEntries(Object.entries(mix).filter(([, v]) => v > 0.001).map(([c, v]) => [c, litros * v]));
     const preco = Object.entries(mix).reduce((a, [c, v]) => a + v * (fd.precoUlt[c] || fd.precoMedio || 0), 0);
     const rec = fills.slice(-10), niv = [...rec.map((f) => f.nivelAntes), ...rec.map((f) => f.nivelDepois)].filter((v) => v != null);
@@ -2050,7 +2082,7 @@ td { padding: 10px 6px; }
     if (inc > 0.05) motivos.push(num(inc * 100) + "% do tanque já estava lá antes do primeiro registro" + (u != null ? ", e o que era foi estimado pelo consumo" : ""));
     if (!ult.km) motivos.push(kmEst ? "o último abastecimento não tem KM, os km depois dele foram estimados pelos dias" : "o último abastecimento não tem KM");
     if (ult.kmEst && !ult.semRef) motivos.push("um abastecimento sem KM teve os km estimados");
-    const consumoFraco = mediaFraca && rodou > 0;
+    const consumoFraco = mediaFraca && rodou > 0 && !acerta;
     if (consumoFraco) motivos.push("o gasto desde o último abastecimento usa médias ainda com confiança baixa");
     const conf = ult.semRef || (inc > 0.2 && u == null) || (!ult.km && !kmEst) ? "baixa"
       : inc > 0.05 || consumoFraco || !ult.km || ult.kmEst ? "média" : "alta";
@@ -2071,7 +2103,8 @@ td { padding: 10px 6px; }
     }
     if (inc > 0.05) dicas.push("a parte que já estava no tanque diminui sozinha a cada abastecimento");
     const origem = rodou > 0 ? "estimativa de consumo" : ult.cheio !== false ? "tanque cheio" : "abastecimento";
-    return { litros, porComb, T, inc, conf, motivos, dicas, origem, data: ult.data, kmRef: Number(ult.km) || null, rodou,
+    const acerto = aj.n >= 3 && aj.erro != null ? `Nos últimos ${aj.n} tanques cheios, o vazio previsto errou em média ${num(aj.erro, 1)} L do que entrou${aj.fator !== 1 ? `; o gasto recente está ${num(Math.abs(aj.fator - 1) * 100)}% ${aj.fator > 1 ? "acima" : "abaixo"} das médias e já foi corrigido` : ""}` : "";
+    return { litros, porComb, T, inc, conf, motivos, dicas, origem, acerto, data: ult.data, kmRef: Number(ult.km) || null, rodou,
       valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
   }
 
@@ -2270,7 +2303,8 @@ td { padding: 10px 6px; }
     const gatilho = Math.max(0, med(antes)), poe = Math.min(t.T - gatilho, med(litros));
     if (!(poe > 1)) return null;
     const precoL = pc.ck.v * pc.ck.kmL * fp, h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate();
-    const gasta = (d, futuro) => (pc.kmDia * k * (futuro ? pesoDoDia(d, peso, ff) : peso ? peso[d.getDay()] : 1)) / pc.ck.kmL;
+    const fv = (fd.ajusteVazio && fd.ajusteVazio.fator) || 1; // correção pelo que entrou nos últimos tanques cheios
+    const gasta = (d, futuro) => (pc.kmDia * k * fv * (futuro ? pesoDoDia(d, peso, ff) : peso ? peso[d.getDay()] : 1)) / pc.ck.kmL;
     // os litros do tanque valem no dia do último KM: os dias depois dele, até hoje, já foram rodados
     const cad = cadeiaKm(car.id), ultKm = cad.length ? cad[cad.length - 1].d : t.data;
     let nivel = t.litros, valor = 0;
@@ -3408,6 +3442,9 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 16, data: "2026-11-07", itens: [
+      "Tanque cheio confere a conta: o app compara o vazio que previa com os litros que entraram até o bico desligar. Se os últimos tanques gastaram mais ou menos que as médias, o nível do tanque e a previsão do mês se corrigem sozinhos.",
+    ] },
     { v: 15, data: "2026-11-05", itens: [
       "Qual combustível colocar: com diferença menor que 3% por km aparece \"Tanto faz\", e o custo por km mostra 3 casas.",
     ] },
@@ -3550,6 +3587,7 @@ td { padding: 10px 6px; }
       const f = fuelData(F.carId).all.find((x) => x.id === F.id);
       if (!f) return "";
       return [f.kml ? "Rendeu " + num(f.kml, 1) + " km/l" + (f.foraKm > 0.05 ? " na parte de líquido" : "") : f.fora && fuelData(F.carId).kmlPor[f.comb] ? "Média " + num(fuelData(F.carId).kmlPor[f.comb], 1) + " " + unidKm(f.comb) : "", f.preco ? brl(f.preco) + "/" + unidade(f.comb) : "",
+        f.vazioPrev != null ? "o app previa " + num(f.vazioPrev, 1) + " L vazios, entraram " + num(f.vazioReal, 1) + " L" : "",
         f.mixIncerto ? "mistura incerta: parcial sem KM" : f.mix && (f.mix.Etanol || 0) >= 0.05 && (f.mix.Gasolina || 0) >= 0.05 ? "rodou com " + num((f.mix.Etanol || 0) * 100) + "% de etanol" : ""].filter(Boolean).join(" · ");
     })();
     const read = (b) => {

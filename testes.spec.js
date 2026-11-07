@@ -1294,3 +1294,17 @@ test("foto do painel preenche o KM e guarda o ponteiro antes de abastecer", asyn
   expect(ab.ponteiro).toBe(0.375);
   expect(ab.km).toBe(52340);
 });
+
+test("tanque cheio confere o vazio previsto e corrige o gasto quando os últimos tanques gastaram mais", async ({ page }) => {
+  const ab = (d, km, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: litros * 6, litros, km, ts: 100 + d });
+  // tanque de 50 L: três tanques a 12 km/l (480 km com 40 L) e depois três gastando mais (480 km com 44 L)
+  const L = [ab(-70, 10000, 50), ab(-60, 10480, 40), ab(-50, 10960, 40), ab(-40, 11440, 40), ab(-30, 11920, 44), ab(-20, 12400, 44), ab(-10, 12880, 44)];
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }));
+  const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  await expect(tq).toContainText(/Nos últimos 5 tanques cheios, o vazio previsto errou em média [\d,]+ L/);
+  await expect(tq).toContainText(/gasto recente está \d+% acima das médias/);
+  await aba(page, "carro");
+  await parte(page, "consumo");
+  await page.locator(`.frow[data-lanc]`, { hasText: dia(-10).slice(8, 10) + "/" + dia(-10).slice(5, 7) }).click();
+  await expect(page.locator("#sheetBody")).toContainText(/o app previa [\d,]+ L vazios, entraram 44,0 L/);
+});
