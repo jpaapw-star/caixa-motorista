@@ -28,7 +28,7 @@
   --plate-band-ink: #FFFFFF;
   --f-disp: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
   --f-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
-  --r: 16px;
+  --r: 24px;
   --nav-h: 64px;
 }
 @media (prefers-color-scheme: dark) {
@@ -408,6 +408,19 @@ body { font-size: 16px; -webkit-font-smoothing: antialiased; }
 .tab[aria-current="page"], .tab[aria-current="page"] svg { color: var(--faixa); }
 .fab { border: 0; box-shadow: 0 6px 18px rgb(0 0 0 / .3); }
 .toast { border-radius: 999px; }
+/* visual 2026-11: título grande da tela, cantos redondos, lista com ícones, + quadrado, botão largo */
+.ptitulo { font: 800 34px/1.05 var(--f-disp); letter-spacing: -.03em; margin: 2px 0 0; }
+.fab { border-radius: 18px; width: 54px; height: 54px; margin-top: -14px; }
+.btn.primary:not(.sm), .btn.dark:not(.sm), .btn.largo { border-radius: 999px; }
+.btn.largo { width: 100%; padding: 14px; font-size: 16px; }
+.bar-row .track { height: 5px; }
+.chart .grid { stroke-dasharray: 2 4; }
+.ico { width: 36px; height: 36px; border-radius: 11px; background: var(--fill); display: grid; place-items: center; flex: none; }
+.ico svg { width: 18px; height: 18px; }
+.mais-lista .item { justify-content: flex-start; padding: 10px 14px; border-top: 0; }
+.mais-lista .item b { flex: 1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card, :root:not([data-theme="light"]) .day { border-color: transparent; } }
+:root[data-theme="dark"] .card, :root[data-theme="dark"] .day { border-color: transparent; }
 .bar-row .track, .meta-row .track { background: var(--fill); }
 .day-h .meta button { border: 0; background: var(--fill); border-radius: 999px; padding: 3px 10px; }
 .caixa > .split:first-child .label { text-transform: none; letter-spacing: -.01em; font: 700 18px/1.2 var(--f-disp); color: var(--ink); }
@@ -1292,7 +1305,7 @@ td { padding: 10px 6px; }
         : `<p class="note" style="margin:0">Cadastre os custos do carro para saber quanto separar por dia.</p>`}
         ${cx.entradas || cx.saidas ? `<div class="split" style="border-top:1px solid var(--line);padding-top:8px"><span>Na caixinha</span><b class="num${cx.saldo < 0 ? " neg" : ""}">${brl(cx.saldo)}</b></div>` : ""}
         ${pv.proximo ? `<p class="note" style="margin:0">Próximo gasto: ${esc(pv.proximo.nome)} em ${mesAno(pv.proximo.data)}, ${brl(pv.proximo.valor)}.</p>` : ""}
-        <div class="btn-row"><button class="btn sm primary" id="addSep"${S.offline ? " disabled" : ""}>Separei dinheiro</button></div>
+        <div class="btn-row"><button class="btn primary largo" id="addSep"${S.offline ? " disabled" : ""}>Separei dinheiro</button></div>
       </div>
     `;
   }
@@ -1301,7 +1314,7 @@ td { padding: 10px 6px; }
     const s = stats(S.ym);
     const datas = [...new Set([...s.L.map((x) => x.data), ...s.D.map((d) => d.data)])].sort().reverse();
     const mes = MES[Number(S.ym.slice(5)) - 1];
-    let html = `<div class="sec-h"><h2>Histórico</h2><button class="btn sm ghost" id="addDia"${S.offline ? " disabled" : ""}>+ Dia de trabalho</button></div>`;
+    let html = `<div class="sec-h" style="align-items:center"><h1 class="ptitulo">Histórico</h1><button class="btn sm ghost" id="addDia"${S.offline ? " disabled" : ""}>+ Dia de trabalho</button></div>`;
     if (!datas.length) {
       html += `<div class="empty"><b>Nada anotado em ${mes}</b><span>Toque no botão + para lançar um ganho ou um gasto.</span></div>`;
     }
@@ -2687,7 +2700,7 @@ td { padding: 10px 6px; }
           : `<div class="empty"><b>Nenhum documento cadastrado</b><span>Anote a validade da CNH, do licenciamento, do seguro e do IPVA. O app avisa na tela inicial antes de vencer.</span><button class="btn sm primary" id="addDoc2"${off}>Adicionar documento</button></div>`}
         <p class="note">A CNH avisa 60 dias antes e os outros documentos 30 dias antes. Os apps de corrida costumam exigir CNH com a observação EAR (exerce atividade remunerada).</p>`;
     }
-    $("#tab-carro").innerHTML = seletor + ficha + seg + pane;
+    $("#tab-carro").innerHTML = `<h1 class="ptitulo">Carro</h1>` + seletor + ficha + seg + pane;
   }
 
   // ----- custos, documentos e histórico -----
@@ -3403,8 +3416,8 @@ td { padding: 10px 6px; }
     [0, 0.5, 1].forEach((f) => { const v = max * f; svg += `<line class="grid" x1="${pL}" x2="${W - pR}" y1="${y(v)}" y2="${y(v)}"/><text x="${pL - 6}" y="${y(v) + 4}" text-anchor="end">${shortBRL(v).replace("R$ ", "")}</text>`; });
     data.forEach((d, i) => {
       const cx = pL + gw * i + gw / 2;
-      svg += `<rect x="${cx - bw - 1}" y="${y(d.ganhos)}" width="${bw}" height="${Math.max(0, pT + ph - y(d.ganhos))}" rx="3" fill="var(--ganho)"/>`;
-      svg += `<rect x="${cx + 1}" y="${y(d.gastos)}" width="${bw}" height="${Math.max(0, pT + ph - y(d.gastos))}" rx="3" fill="var(--gasto)"/>`;
+      svg += `<rect x="${cx - 8}" y="${y(d.ganhos)}" width="6" height="${Math.max(0, pT + ph - y(d.ganhos))}" rx="3" fill="var(--ganho)"/>`;
+      svg += `<rect x="${cx + 2}" y="${y(d.gastos)}" width="6" height="${Math.max(0, pT + ph - y(d.gastos))}" rx="3" fill="var(--gasto)"/>`;
       svg += `<text x="${cx}" y="${H - 6}" text-anchor="middle"${d.ym === S.ym ? ' style="fill:var(--ink);font-weight:600"' : ""}>${MES_AB[Number(d.ym.slice(5)) - 1]}</text>`;
     });
     svg += "</svg>";
@@ -3421,6 +3434,7 @@ td { padding: 10px 6px; }
     const comDados = data.filter((d) => d.ganhos || d.gastos);
     const ganhosCat = porCat("ganho"), gastosCat = porCat("gasto");
     $("#tab-resumo").innerHTML = `
+      <h1 class="ptitulo">Resumo</h1>
       ${comDados.length ? `<div class="card"><div class="sec-h"><h2>Últimos 6 meses</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
         <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th></tr></thead><tbody>
         ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td></tr>`).join("")}
@@ -3433,10 +3447,10 @@ td { padding: 10px 6px; }
         <p class="note" style="margin:0">${S.local ? (S.settings.ultimoBackup ? "Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") : "Ficam só neste celular. Salve uma cópia.") : "Salve aqui e use Restaurar cópia no app instalado."}</p>
         <div class="exports">${temGoogle() ? `<button class="btn sm primary" id="gSave"${S.offline ? " disabled" : ""}>Salvar no Google</button>` : ""}${S.downloads ? `<button class="btn sm ${temGoogle() ? "ghost" : "primary"}" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
       <div class="day mais-lista">
-        <button class="item" id="verTut"><b>Ver o tutorial</b><i class="chev">›</i></button>
-        <button class="item" id="verNov"><b>Novidades</b><i class="chev">›</i></button>
-        ${S.local ? `<button class="item" id="indicar"><b>Indicar para um motorista</b><i class="chev">›</i></button>` : ""}
-        ${S.downloads ? `<button class="item" id="expLanc"><b>Exportar lançamentos</b><i class="chev">›</i></button><button class="item" id="expDias"><b>Exportar dias de trabalho</b><i class="chev">›</i></button>` : ""}
+        <button class="item" id="verTut"><i class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z"/></svg></i><b>Ver o tutorial</b><i class="chev">›</i></button>
+        <button class="item" id="verNov"><i class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6L12 16.8 6.7 19.6l1.1-6L3.4 9.4l6-.8z"/></svg></i><b>Novidades</b><i class="chev">›</i></button>
+        ${S.local ? `<button class="item" id="indicar"><i class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></svg></i><b>Indicar para um motorista</b><i class="chev">›</i></button>` : ""}
+        ${S.downloads ? `<button class="item" id="expLanc"><i class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg></i><b>Exportar lançamentos</b><i class="chev">›</i></button><button class="item" id="expDias"><i class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></i><b>Exportar dias de trabalho</b><i class="chev">›</i></button>` : ""}
       </div>
     `;
   }
@@ -3496,6 +3510,7 @@ td { padding: 10px 6px; }
       "Resumo mais curto: tutorial, novidades, indicar e exportar viraram uma lista só.",
       "Contas mais certas para quem só anota o KM no posto: o tanque, os km do mês, o que queimou e o ganho por km agora contam os dias depois do último abastecimento, pelo seu ritmo.",
       "Lucro previsto do mês considera os dias da semana em que você costuma trabalhar.",
+      "Visual novo: título grande em cada tela, cantos mais redondos, barras finas no gráfico e botão + quadrado.",
     ] },
     { v: 16, data: "2026-11-07", itens: [
       "Tanque cheio confere a conta: o app compara o vazio que previa com os litros que entraram até o bico desligar. Se os últimos tanques gastaram mais ou menos que as médias, o nível do tanque e a previsão do mês se corrigem sozinhos.",
