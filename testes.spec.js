@@ -1308,3 +1308,24 @@ test("tanque cheio confere o vazio previsto e corrige o gasto quando os últimos
   await page.locator(`.frow[data-lanc]`, { hasText: dia(-10).slice(8, 10) + "/" + dia(-10).slice(5, 7) }).click();
   await expect(page.locator("#sheetBody")).toContainText(/o app previa [\d,]+ L vazios, entraram 44,0 L/);
 });
+
+test("lançamento novo mostra as categorias mais usadas, os postos de costume e o combustível no histórico", async ({ page }) => {
+  const L = [
+    ...[-9, -6, -3].map((d, i) => ({ data: dia(d), tipo: "gasto", cat: "Alimentação", valor: 20, ts: 10 + i })),
+    { data: dia(-1), tipo: "gasto", cat: "Combustível", comb: "Etanol", cheio: true, valor: 120, litros: 30, km: 5000, posto: "Shell Centro", ts: 50 },
+  ];
+  await abrir(page, dados({ lancamentos: L }));
+  await page.click("#fab");
+  await page.click('[data-tipo="gasto"]');
+  // Alimentação é a mais usada: aparece sem tocar em "Mais"; Multa fica escondida
+  await expect(page.locator('#sheetBody [data-cat="Alimentação"]')).toBeVisible();
+  await expect(page.locator('#sheetBody [data-cat="Multa"]')).toHaveCount(0);
+  await page.click("#maisCat");
+  await expect(page.locator('#sheetBody [data-cat="Multa"]')).toBeVisible();
+  await page.click('#sheetBody [data-cat="Combustível"]');
+  await page.click('#sheetBody [data-posto="Shell Centro"]');
+  await expect(page.locator("#fPosto")).toHaveValue("Shell Centro");
+  await page.click("#fCancel");
+  await aba(page, "historico");
+  await expect(page.locator(".item", { hasText: "Combustível" })).toContainText("Etanol · 30,0 L");
+});
