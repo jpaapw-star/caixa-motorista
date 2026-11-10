@@ -928,10 +928,11 @@ test("previsão do mês desconta o combustível que já está no tanque", async 
   const d15 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
   const ab = (d, km) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + d });
   // 12 km/l, 48 km por dia, R$ 6,25: R$ 25 por dia. Encheu ontem: os 40 L (R$ 250) estão no tanque.
-  // Em média ficam 24 L (R$ 150) no tanque, então a previsão cai R$ 100 em relação a "gasto + R$ 25 por dia".
+  // De ontem para hoje rodou 48 km (pelo ritmo): sobram 36 L (R$ 225). Em média ficam 24 L (R$ 150) no tanque,
+  // então a previsão cai R$ 75 em relação a "gasto + R$ 25 por dia".
   await abrir(page, dados({ lancamentos: [ab(-21, 10000), ab(-11, 10480), ab(-1, 10960)], carros: [{ id: "principal", tanque: 40 }] }));
   const N = new Date(y, mo, 0).getDate();
-  const esperado = 500 + 25 * (N - 15) - 100;
+  const esperado = 500 + 25 * (N - 15) - 75;
   const brl = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   await expect(page.locator("#tab-inicio .cp-prev")).toHaveText(brl(esperado));
 });
@@ -952,7 +953,7 @@ test("previsão do mês mostra a faixa quando os km da semana variam", async ({ 
 test("mistura atual do tanque: tanque cheio guarda o que já estava lá (exemplo do mandato)", async ({ page }) => {
   // tanque de 50 L com gasolina; rodou 240 km e completou com 20 L de etanol: antes havia 30 L de gasolina
   const ab = (d, km, comb, litros, valor) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
-  await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, 312.5), ab(-1, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
+  await abrir(page, dados({ lancamentos: [ab(-9, 10000, "Gasolina", 50, 312.5), ab(0, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
   const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
   await expect(tq).toContainText("60%"); // gasolina 30 L
   await expect(tq).toContainText("30,0 L");
@@ -1096,7 +1097,7 @@ test("Resumo mostra quanto a previsão acertou nos meses que passaram", async ({
 
 test("mistura do tanque mostra o álcool total, contando o etanol da gasolina", async ({ page }) => {
   const ab = (d, km, comb, litros, valor) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb, cheio: true, valor, litros, km, ts: 100 + d });
-  await abrir(page, dados({ lancamentos: [ab(-10, 10000, "Gasolina", 50, 312.5), ab(-1, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
+  await abrir(page, dados({ lancamentos: [ab(-9, 10000, "Gasolina", 50, 312.5), ab(0, 10240, "Etanol", 20, 80)], carros: [{ id: "principal", tanque: 50 }] }));
   // 20 L de etanol + 30% dos 30 L de gasolina = 29 L de 50: 58%
   await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText("Álcool no tanque: 58%");
   await expect(page.locator(".card", { hasText: "Mistura atual do tanque" })).toContainText(/Vazio\s*0%\s*0,0 L/i);
@@ -1329,4 +1330,14 @@ test("lançamento novo mostra as categorias mais usadas, os postos de costume e 
   await page.click("#fCancel");
   await aba(page, "historico");
   await expect(page.locator(".item", { hasText: "Combustível" })).toContainText("Etanol · 30,0 L");
+});
+
+test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", async ({ page }) => {
+  // 40 km por dia, 10 km/l: encheu há 5 dias e não anotou mais nenhum KM
+  const ab = (d, km) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 120, litros: 20, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-25, 10000), ab(-20, 10200), ab(-15, 10400), ab(-10, 10600), ab(-5, 10800)], carros: [{ id: "principal", tanque: 50 }] }));
+  const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
+  // 5 dias × 40 km = 200 km = 20 L: sobram 30 L de 50 (vazio 40%)
+  await expect(tq).toContainText(/Vazio\s*40%\s*20,0 L/i);
+  await expect(tq).toContainText("uns 200 km rodados (5 dias pelo seu ritmo)");
 });
