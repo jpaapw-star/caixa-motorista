@@ -154,6 +154,8 @@ button { cursor: pointer; }
 .day-h .meta button { border: 1px dashed var(--line); background: transparent; border-radius: 7px; padding: 2px 7px; font-size: 12px; color: var(--muted); }
 .item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 14px; border: 0; border-top: 1px solid var(--line); background: transparent; width: 100%; text-align: left; }
 .item:first-of-type { border-top: 0; }
+.item .chev { font-style: normal; color: var(--muted); font-size: 20px; line-height: 1; }
+.mais-lista .item b { font-weight: 500; }
 .item div { min-width: 0; }
 .item b { font-weight: 600; display: block; }
 .item span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
@@ -2925,6 +2927,13 @@ td { padding: 10px 6px; }
       if (box) box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true, title: "Link do RLCAR" });
     } catch (e) { const box = $("#qrBox"); if (box) box.hidden = true; }
   }
+  function indicarForm() {
+    openForm(() => `
+      <div><h2>Indicar para um motorista</h2></div>
+      <div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app" style="margin:0 auto"></div>
+      <div class="sh-actions"><button type="button" class="btn ghost" id="fCancel">Fechar</button><button type="button" class="btn primary" id="shareApp">Mandar o link</button></div>
+    `, (draw, b) => { b.querySelector("#fCancel").onclick = closeSheet; b.querySelector("#shareApp").onclick = compartilharApp; desenharQR(); });
+  }
   async function compartilharApp() {
     const url = linkApp();
     const dados = { title: "RLCAR", text: "RLCAR, app grátis para motorista de aplicativo controlar ganhos, gastos e a manutenção do carro:", url };
@@ -3387,15 +3396,13 @@ td { padding: 10px 6px; }
       <div class="card"><div class="sec-h"><h2>Seus dados</h2></div>
         <p class="note" style="margin:0">${S.local ? (S.settings.ultimoBackup ? "Última cópia: " + dBR(dStr(new Date(S.settings.ultimoBackup))) + (temGoogle() && S.settings.ultimoGoogle === S.settings.ultimoBackup ? ", no Google Drive" : "") : "Ficam só neste celular. Salve uma cópia.") : "Salve aqui e use Restaurar cópia no app instalado."}</p>
         <div class="exports">${temGoogle() ? `<button class="btn sm primary" id="gSave"${S.offline ? " disabled" : ""}>Salvar no Google</button>` : ""}${S.downloads ? `<button class="btn sm ${temGoogle() ? "ghost" : "primary"}" id="bkSave"${S.offline ? " disabled" : ""}>Salvar cópia</button>` : ""}<button class="btn sm ghost" id="bkLoad"${S.offline ? " disabled" : ""}>Restaurar cópia</button></div></div>
-      <div class="card"><div class="sec-h"><h2>Ajuda</h2></div>
-        <div class="exports"><button class="btn sm ghost" id="verTut">Ver o tutorial</button><button class="btn sm ghost" id="verNov">Novidades</button></div></div>
-      ${S.local ? `<div class="card"><div class="sec-h"><h2>Indicar para um motorista</h2></div>
-        <div class="qr"><div class="qr-box" id="qrBox" role="img" aria-label="QR code com o link do app"></div>
-          <div><button class="btn sm primary" id="shareApp">Mandar o link</button></div></div></div>` : ""}
-      ${S.downloads ? `<div class="card"><div class="sec-h"><h2>Levar para a planilha</h2></div>
-        <div class="exports"><button class="btn sm ghost" id="expLanc">Exportar lançamentos</button><button class="btn sm ghost" id="expDias">Exportar dias de trabalho</button></div></div>` : ""}
+      <div class="day mais-lista">
+        <button class="item" id="verTut"><b>Ver o tutorial</b><i class="chev">›</i></button>
+        <button class="item" id="verNov"><b>Novidades</b><i class="chev">›</i></button>
+        ${S.local ? `<button class="item" id="indicar"><b>Indicar para um motorista</b><i class="chev">›</i></button>` : ""}
+        ${S.downloads ? `<button class="item" id="expLanc"><b>Exportar lançamentos</b><i class="chev">›</i></button><button class="item" id="expDias"><b>Exportar dias de trabalho</b><i class="chev">›</i></button>` : ""}
+      </div>
     `;
-    if (S.local) desenharQR();
   }
 
   // ---------- folha (modal) ----------
@@ -3450,6 +3457,7 @@ td { padding: 10px 6px; }
       "Histórico mostra qual combustível foi em cada abastecimento.",
       "Manutenção mais curta: cada serviço mostra só quanto falta.",
       "A confiança do tanque cai para média quando o vazio previsto vem errando mais de 10% do tanque.",
+      "Resumo mais curto: tutorial, novidades, indicar e exportar viraram uma lista só.",
     ] },
     { v: 16, data: "2026-11-07", itens: [
       "Tanque cheio confere a conta: o app compara o vazio que previa com os litros que entraram até o bico desligar. Se os últimos tanques gastaram mais ou menos que as médias, o nível do tanque e a previsão do mês se corrigem sozinhos.",
@@ -4228,7 +4236,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (t.id === "expLanc") { exportar("lanc"); return; }
     if (t.id === "fipeBtn") { fipeForm(); return; }
     if (t.id === "cidadeBtn") { cidadeForm(); return; }
-    if (t.id === "shareApp") { compartilharApp(); return; }
+    if (t.id === "indicar") { indicarForm(); return; }
     if (t.id === "bkSave") { salvarBackup(t); return; }
     if (t.id === "gSave") { salvarGoogle(t); return; }
     if (t.id === "verTut") { tutorialForm(); return; }

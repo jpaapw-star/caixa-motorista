@@ -307,6 +307,7 @@ test("QR code para indicar o app", async ({ page }) => {
   await semCompartilhar(page);
   await abrir(page);
   await aba(page, "resumo");
+  await page.click("#indicar");
   await expect(page.locator("#qrBox svg path")).toHaveCount(1);
   await page.click("#shareApp");
   await expect(page.locator("#toast")).toContainText(/Link copiado|127\.0\.0\.1/);
