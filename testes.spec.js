@@ -1340,4 +1340,6 @@ test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", as
   // 5 dias × 40 km = 200 km = 20 L: sobram 30 L de 50 (vazio 40%)
   await expect(tq).toContainText(/Vazio\s*40%\s*20,0 L/i);
   await expect(tq).toContainText("uns 200 km rodados (5 dias pelo seu ritmo)");
+  // sobram 30 L a 10 km/l = 300 km; a 40 km por dia dá 7 dias e meio
+  await expect(tq.locator("#autonomia")).toHaveText("~7 dias · 300 km");
 });
