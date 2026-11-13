@@ -1133,6 +1133,7 @@ td { padding: 10px 6px; }
     return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
       <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%, vazio ${pv}% do tanque"><i class="g" style="width:${(G / t.T) * 100}%"></i><i class="e" style="width:${(E / t.T) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / t.T) * 100}%"></i>` : ""}</div>
       <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:center"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span><span style="text-align:right"><span class="label">Vazio</span><br><b class="num">${pv}%</b> <small>${num(vazio, 1)} L</small></span></div>
+      ${t.autKm >= 1 ? `<div class="split"><span class="label">Dá para rodar</span><b class="num" id="autonomia">${t.autDias != null ? (t.autDias < 1 ? "menos de 1 dia" : "~" + Math.floor(t.autDias) + (Math.floor(t.autDias) === 1 ? " dia" : " dias")) + " · " : ""}${num(Math.round(t.autKm / 5) * 5)} km</b></div>` : ""}
       <details class="mais"><summary>Detalhes</summary><div>
       ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}%</small>` : ""}
       <small class="num" style="color:var(--muted)">${quando}</small>
@@ -2157,9 +2158,25 @@ td { padding: 10px 6px; }
       }
     }
     if (inc > 0.05) dicas.push("a parte que já estava no tanque diminui sozinha a cada abastecimento");
+    // Quanto ainda roda com o que está no tanque: litros × km por litro da mistura (com a correção dos últimos
+    // tanques), e em quantos dias isso acaba pelo seu ritmo, dia a dia a partir de amanhã, com o peso de cada dia da semana.
+    let autKm = null, autDias = null;
+    if (kmlDe > 0 && litros > 0) {
+      autKm = (litros * kmlDe) / (fd.partLiq * aj.fator);
+      if (rk && !rk.estimativa && rk.kmDia > 0) {
+        const peso = pesoDiasSemana(), ff = fatorFeriado(), h = new Date();
+        let resta = autKm, n = 0;
+        while (n < 60) {
+          const g = rk.kmDia * pesoDoDia(new Date(h.getFullYear(), h.getMonth(), h.getDate() + n + 1), peso, ff);
+          if (g >= resta) { n += g > 0 ? resta / g : 0; break; }
+          resta -= g; n++;
+        }
+        autDias = n;
+      }
+    }
     const origem = rodou > 0 ? "estimativa de consumo" : ult.cheio !== false ? "tanque cheio" : "abastecimento";
     const acerto = aj.n >= 3 && aj.erro != null ? `Nos últimos ${aj.n} tanques cheios, o vazio previsto errou em média ${num(aj.erro, 1)} L do que entrou${aj.fator !== 1 ? `; o gasto recente está ${num(Math.abs(aj.fator - 1) * 100)}% ${aj.fator > 1 ? "acima" : "abaixo"} das médias e já foi corrigido` : ""}` : "";
-    return { litros, porComb, T, inc, conf, motivos, dicas, origem, acerto, data: ult.data, kmRef: Number(ult.km) || null, rodou, diasEst, ateHoje: !!eh && eh.de < today() && diasEst > 0,
+    return { litros, porComb, T, inc, conf, motivos, dicas, origem, acerto, data: ult.data, kmRef: Number(ult.km) || null, rodou, autKm, autDias, diasEst, ateHoje: !!eh && eh.de < today() && diasEst > 0,
       valor: litros * preco, medioValor: medio != null ? medio * preco : null, preco };
   }
 
@@ -3502,6 +3519,9 @@ td { padding: 10px 6px; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 18, data: "2026-11-13", itens: [
+      "Embaixo do tanque aparece quantos dias e quantos km ainda dá para rodar, pelas suas médias.",
+    ] },
     { v: 17, data: "2026-11-10", itens: [
       "Lançar ficou mais rápido: aparecem primeiro as 5 categorias que você mais usa, e os postos onde você abastece viram botões.",
       "Histórico mostra qual combustível foi em cada abastecimento.",
