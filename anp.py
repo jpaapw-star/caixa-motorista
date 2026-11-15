@@ -182,9 +182,24 @@ def baixar(url, tentativas=3):
             time.sleep(10 * (n + 1))
 
 
+# A ANP muda o jeito de escrever as datas no nome do arquivo: "2026-10-04_2026-10-10", "2026_10_18-2026_10_24"
+# e até "2026-08-30-2026-09-5". Aceita "-" ou "_" entre ano, mês e dia.
+DATA_NO_NOME = r"(\d{4})[-_](\d{1,2})[-_](\d{1,2})"
+
+
+def datas_do_nome(texto):
+    out = []
+    for a, m, d in re.findall(DATA_NO_NOME, os.path.basename(texto)):
+        try:
+            out.append(date(int(a), int(m), int(d)))
+        except ValueError:
+            pass
+    return out
+
+
 def fim_da_semana(url):
-    datas = re.findall(r"(\d{4})-(\d{1,2})-(\d{1,2})", url)
-    return date(*map(int, datas[-1])) if datas else date.min
+    datas = datas_do_nome(url)
+    return datas[-1] if datas else date.min
 
 
 def achar_arquivo():
@@ -204,23 +219,31 @@ def achar_arquivo():
             f = fim + timedelta(weeks=k)
             if f >= date.today():
                 break
-            url = url_da_semana(f)
-            if existe(url):
-                melhor = url
+            for url in urls_da_semana(f):
+                if existe(url):
+                    melhor = url
+                    break
         return melhor
     # a semana da ANP vai de domingo a sábado
     hoje = date.today()
     sabado = hoje - timedelta(days=(hoje.weekday() - 5) % 7 or 7)
     for k in range(5):
-        url = url_da_semana(sabado - timedelta(weeks=k))
-        if existe(url):
-            return url
+        for url in urls_da_semana(sabado - timedelta(weeks=k)):
+            if existe(url):
+                return url
     raise SystemExit("Não achei a planilha semanal da ANP. O site pode ter mudado.")
 
 
 def url_da_semana(fim):
     ini = fim - timedelta(days=6)
     return "%s%d/resumo_semanal_lpc_%s_%s.xlsx" % (PASTA_ARQUIVOS, fim.year, ini.isoformat(), fim.isoformat())
+
+
+def urls_da_semana(fim):
+    """Os dois jeitos de nome que a ANP já usou para a mesma semana."""
+    ini = fim - timedelta(days=6)
+    sub = lambda d: d.isoformat().replace("-", "_")
+    return [url_da_semana(fim), "%s%d/resumo_semanal_lpc_%s-%s.xlsx" % (PASTA_ARQUIVOS, fim.year, sub(ini), sub(fim))]
 
 
 def existe(url):
@@ -284,9 +307,9 @@ def main():
         conteudo = baixar(arquivo)
     estados, municipios, brasil, semana = ler_planilha(conteudo)
     if not semana:
-        datas = re.findall(r"(\d{4})-(\d{1,2})-(\d{1,2})", os.path.basename(arquivo))
+        datas = datas_do_nome(arquivo)
         if len(datas) >= 2:
-            semana = {"inicio": date(*map(int, datas[-2])).isoformat(), "fim": date(*map(int, datas[-1])).isoformat()}
+            semana = {"inicio": datas[-2].isoformat(), "fim": datas[-1].isoformat()}
     print("Lidos: %d estados e %d cidades. Semana: %s" % (len(estados), len(municipios), semana))
     if len(estados) < 20 or len(municipios) < 50:
         raise SystemExit("A planilha veio diferente do esperado (poucos estados ou cidades). Nada foi gravado.")
