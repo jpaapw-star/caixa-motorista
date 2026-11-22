@@ -11,9 +11,11 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import unicodedata
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urljoin
@@ -170,16 +172,27 @@ def ler_planilha(conteudo):
     return estados, municipios, brasil.get("BR"), semana
 
 
-def baixar(url, tentativas=3):
+def _curl(url, so_cabecalho=False):
+    """Mesmo pedido pelo curl: o site da ANP às vezes derruba a conexão do Python e aceita a do curl."""
+    cmd = ["curl", "-sSfL", "--http1.1", "--retry", "3", "--retry-all-errors", "--retry-delay", "15",
+           "--max-time", "120", "-A", CABECALHOS["User-Agent"], "-H", "Accept: */*", "-H", "Accept-Language: pt-BR,pt;q=0.9"]
+    if so_cabecalho:
+        cmd += ["-I", "-o", "/dev/null"]
+    return subprocess.run(cmd + [url], check=True, capture_output=True, timeout=600).stdout
+
+
+def baixar(url, tentativas=4):
     for n in range(tentativas):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=CABECALHOS), timeout=90) as r:
                 return r.read()
         except Exception as e:  # noqa: BLE001
-            if n == tentativas - 1:
-                raise
             print("  falhou (%s), tentando de novo…" % e)
-            time.sleep(10 * (n + 1))
+            if n == tentativas - 1:
+                break
+            time.sleep(20 * (n + 1))
+    print("  tentando pelo curl…")
+    return _curl(url)
 
 
 # A ANP muda o jeito de escrever as datas no nome do arquivo: "2026-10-04_2026-10-10", "2026_10_18-2026_10_24"
@@ -251,8 +264,14 @@ def existe(url):
         req = urllib.request.Request(url, headers=CABECALHOS, method="HEAD")
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status == 200
-    except Exception:  # noqa: BLE001
+    except urllib.error.HTTPError:
         return False
+    except Exception:  # noqa: BLE001
+        try:
+            _curl(url, so_cabecalho=True)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
 
 HIST_SEMANAS = 10
