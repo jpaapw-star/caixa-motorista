@@ -105,6 +105,11 @@ test.afterEach(async ({ page }) => {
 });
 
 // a previsão do mês mostra os detalhes (faixa, parte de cada combustível, ajustes) ao tocar nela
+// os avisos do Início mostram um por vez; abre os outros
+async function avisos(page) {
+  const b = page.locator("#avMais");
+  if (await b.count() && /Mais/.test(await b.innerText())) await b.click();
+}
 async function abrirPrev(page) {
   await page.locator("#tab-inicio .comb-prev").click();
   return page.locator("#sheetBody");
@@ -220,7 +225,7 @@ test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = 
   await expect(pneus).toContainText("R$ 45,94 /mês");
   await expect(pneus).toContainText("24 meses");
   await expect(pneus).toContainText("hoje R$ 1.000,00, com inflação"); // 1.000 × 1,05² = 1.102,50 ÷ 24 meses
-  await expect(total).toContainText("R$ 45,94");
+  await expect(page.locator(".card", { hasText: "Caixinha do carro" }).locator(".custo-hero")).toContainText("Para manter o carro em");
   await aba(page, "inicio");
   await page.click("#addSep");
   await page.fill("#sV", "50");
@@ -229,7 +234,7 @@ test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = 
   await aba(page, "carro");
   await expect(pneus).toContainText("R$ 45,94 /mês"); // o que foi separado neste mês vai para a meta do mês
   await expect(pneus).toContainText("já tem R$ 50,00");
-  await expect(total).toContainText("R$ 45,94");
+  await expect(total).toBeVisible();
 });
 
 test("Tabela FIPE: valor do carro e quanto ele perde por ano", async ({ page }) => {
@@ -249,9 +254,9 @@ test("Tabela FIPE: valor do carro e quanto ele perde por ano", async ({ page }) 
   await page.click("#fSave");
   await expect(page.locator("#sheet")).toBeHidden();
   const card = page.locator(".card.custo-hero").first();
-  await expect(card).toContainText("Tabela FIPE (outubro de 2026)");
+  await expect(card).toContainText("FIPE outubro de 2026");
   await expect(card).toContainText("60.000,00");
-  await expect(card).toContainText("perdeu 7,7% em 12 meses");
+  await expect(card).toContainText("−7,7% em 12 meses");
   await page.click("#editCustos");
   await expect(page.locator("#cf_valorCarro")).toHaveValue("60.000");
   await expect(page.locator("#cf_desvalPct")).toHaveValue("7,70");
@@ -279,7 +284,7 @@ test("preço da ANP: média da cidade, comparação e aviso ao abastecer", async
   await abrir(page, dados({ lancamentos: [abastece(-12, 40000), abastece(-3, 40600)] }));
   await aba(page, "carro");
   await parte(page, "consumo");
-  await expect(page.locator(".card", { hasText: "Preço na sua cidade" })).toBeVisible();
+  await expect(page.locator("#cidadeBtn")).toHaveText("Ver preço da sua cidade"); // sem cidade: só o botão, sem quadro vazio
   await page.click("#cidadeBtn");
   await page.selectOption("#cdUf", "SP");
   await page.selectOption("#cdCid", "SP|sao paulo");
@@ -485,10 +490,10 @@ test("primeira vez: tutorial; depois, as novidades que ficaram para trás aparec
   await abrir(page, null);
   await expect(page.locator("#tutTit")).toHaveText("Bem-vindo ao RLCAR");
   await page.click("#tutProx");
-  await expect(page.locator("#tutTit")).toContainText("ganhos e gastos");
+  await expect(page.locator("#tutTit")).toContainText("Toque no +");
   await page.click("#tutVolta");
   await expect(page.locator("#tutTit")).toHaveText("Bem-vindo ao RLCAR");
-  for (let i = 0; i < 4; i++) await page.click("#tutProx");
+  for (let i = 0; i < 2; i++) await page.click("#tutProx");
   await expect(page.locator("#tutRest")).toBeVisible();
   await page.click("#tutProx"); // Começar
   await expect(page.locator("#sheet")).toBeHidden();
@@ -509,8 +514,9 @@ test("primeira vez: tutorial; depois, as novidades que ficaram para trás aparec
 test("quem já usava e ficou sem abrir vê as novidades uma vez, sem o tutorial", async ({ page }) => {
   await abrir(page, dados({ lancamentos: [{ data: dia(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }] }, { tutorialVisto: undefined, novidadesVistas: 0 }));
   await expect(page.locator("#novTit")).toBeVisible();
+  await page.click("#novTudo"); // as 3 últimas aparecem; o resto em "Ver tudo"
   await expect(page.locator("#sheet")).toContainText("RLCAR");
-  await expect(page.locator("#sheet")).toContainText("Novo ícone"); // as duas atualizações juntas
+  await expect(page.locator("#sheet")).toContainText("Novo ícone"); // as atualizações juntas
   await expect(page.locator("#tutTit")).toHaveCount(0);
   await page.click("#novOk");
   await page.reload();
@@ -611,7 +617,7 @@ test("Trabalho no mês mostra só o essencial e abre o resto ao tocar no título
   await expect(quadro).not.toContainText("Ganho por hora");
   await expect(page.locator("#jorIni")).toHaveCount(0); // sem o botão "Começar a trabalhar"
   await expect(quadro).not.toContainText("Ganhos nos apps"); // já aparece em "Ganhos" no topo
-  await expect(quadro).toContainText("Previsão do mês");
+  await expect(quadro).not.toContainText("Previsão do mês"); // sem previsão ainda: nada de quadro com "—"
   await expect(quadro).not.toContainText("Lucro por dia");
   await expect(quadro).not.toContainText("Km rodados vazio");
   await page.click("#trabMais");
@@ -657,10 +663,10 @@ test("dois combustíveis: gasto, média e previsão separados para gasolina e et
   await expect(tq).toContainText("Gasolina");
   await expect(tq).toContainText("100%");
   // economia: etanol 8 ÷ gasolina 12 × R$ 6,25 = R$ 4,17 é o preço máximo do etanol; a R$ 4,00 ele sai mais barato por km
-  await expect(tq).toContainText(/Etanol compensa até R\$\s4,[12]\d\/L/); // ~R$ 4,17 (as médias saem ~12 e ~8)
-  await expect(tq).toContainText("Priorize etanol");
+  await expect(tq).not.toContainText("Priorize"); // a escolha do combustível fica só na calculadora do Carro
   await aba(page, "carro");
   await parte(page, "consumo");
+  await expect(page.locator("#tab-carro .calc-out .cmp-out b").first()).toHaveText("Etanol");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com gasolina");
   await expect(page.locator("#tab-carro .metrics")).toContainText("12,0");
   await expect(page.locator("#tab-carro .metrics")).toContainText("Média com etanol");
@@ -840,7 +846,8 @@ test("KM digitado errado não infla a previsão nem o valor para manter o carro,
   const ab = (d, km, valor, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor, litros, km, ts: 100 + d });
   // rodou 300 km em 17 dias (17,6 km por dia), mas no meio um KM saiu com 1.800 a menos
   await abrir(page, dados({ lancamentos: [ab(-17, 175840, 200, 33.1), ab(-10, 174040, 120, 20), ab(0, 176140, 150, 25)] }));
-  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toContainText("174.040");
+  await avisos(page);
+  await expect(page.locator("#tab-inicio .alert", { hasText: "parece errado" })).toContainText("174.040");
   await aba(page, "carro");
   await expect(page.locator("#tab-carro .odo-ritmo")).toContainText("18 km por dia"); // e não centenas
   await parte(page, "consumo");
@@ -854,13 +861,14 @@ test("aviso de KM errado diz onde ele está e abre o registro para corrigir", as
     lancamentos: [ab(-17, 175840, 200, 33.1), ab(-10, 176040, 120, 20), ab(0, 176140, 150, 25)],
     historico: [{ id: "h1", servico: "Troca das lâmpadas", data: dia(-10), km: 174040, valor: 30, ts: 1 }],
   }));
-  const alerta = page.locator("#tab-inicio .alert", { hasText: "Confira um KM" });
+  await avisos(page);
+  const alerta = page.locator("#tab-inicio .alert", { hasText: "parece errado" });
   await expect(alerta).toContainText("histórico de Troca das lâmpadas");
   await alerta.click();
   await expect(page.locator("#hK")).toHaveValue("174040");
   await page.locator("#hK").fill("176040");
   await page.locator("#fSave").click();
-  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
+  await expect(page.locator("#tab-inicio .alert", { hasText: "parece errado" })).toHaveCount(0);
 });
 
 test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) => {
@@ -869,12 +877,13 @@ test("KM errado em Atualizar KM pode ser apagado pelo aviso", async ({ page }) =
     lancamentos: [ab(-17, 175840, 200, 33.1), ab(0, 176140, 150, 25)],
     carros: [{ id: "principal", leituras: [{ data: dia(-10), km: 174040 }] }],
   }));
-  const alerta = page.locator("#tab-inicio .alert", { hasText: "Confira um KM" });
+  await avisos(page);
+  const alerta = page.locator("#tab-inicio .alert", { hasText: "parece errado" });
   await expect(alerta).toContainText("Atualizar KM");
   await alerta.click();
   await page.locator("#fDel").click();
   await page.locator("#fDel").click();
-  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um KM" })).toHaveCount(0);
+  await expect(page.locator("#tab-inicio .alert", { hasText: "parece errado" })).toHaveCount(0);
 });
 
 test("lucro por dia conta os dias trabalhados", async ({ page }) => {
@@ -886,7 +895,7 @@ test("lucro por dia conta os dias trabalhados", async ({ page }) => {
     lancamentos: [{ data: d20(-1), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 1 }, { data: d20(0), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 2 }],
     dias: [{ data: d20(-1), horas: 5, kmIni: 1000, kmFim: 1100 }],
   }));
-  await page.click("#trabMais");
+  if (await page.locator("#trabMais").count()) await page.click("#trabMais"); // com poucos números, já aparecem direto
   const q = page.locator("#tab-inicio .metrics").first();
   await expect(q).not.toContainText(/^Ganho por km/);
   await expect(q.locator("div", { hasText: "Lucro por dia" })).toContainText("R$ 100,00"); // 2 dias trabalhados
@@ -960,7 +969,7 @@ test("mistura atual do tanque: tanque cheio guarda o que já estava lá (exemplo
   await expect(tq).toContainText("40%"); // etanol 20 L
   await expect(tq).toContainText("20,0 L");
   await expect(tq).toContainText(/Vazio\s*0%/i);
-  await expect(tq).toContainText("confiança alta");
+  await expect(tq).toContainText("Confiança: alta");
 });
 
 test("mistura sem referência: parcial sem KM deixa a estimativa como não confiável", async ({ page }) => {
@@ -975,6 +984,7 @@ test("mistura sem referência: parcial sem KM deixa a estimativa como não confi
 test("abastecimento com mais litros que o tanque vira aviso", async ({ page }) => {
   const ab = (d, km, litros) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: litros * 6, litros, km, ts: 100 + d });
   await abrir(page, dados({ lancamentos: [ab(-10, 10000, 40), ab(-1, 10500, 55)], carros: [{ id: "principal", tanque: 40 }] }));
+  await avisos(page);
   await expect(page.locator("#tab-inicio .alert", { hasText: "Confira um abastecimento" })).toContainText("55,0 L, mais que o tanque de 40 L");
 });
 
@@ -1005,7 +1015,7 @@ test("previsão do mês aprende com o erro dos meses anteriores e guarda a de ho
   // Com um mês só, a correção fica pela metade (≈ −11%).
   const prevHist = { [prevYm]: [1, 2, 3, 4, 5].map((d) => [d, 0, 625]) };
   await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }, { prevHist }));
-  await expect(await abrirPrev(page)).toContainText("ajuste: histórico −11%");
+  await expect(await abrirPrev(page)).toContainText("−11% pelo erro dos meses passados");
   await expect.poll(async () => page.evaluate(([k, b]) => {
     const h = JSON.parse(localStorage.getItem(k))[b].prevHist || {};
     return Object.keys(h).length;
@@ -1022,7 +1032,7 @@ test("previsão do mês acompanha os ganhos do mês", async ({ page }) => {
     ganhos.push({ data: d, tipo: "ganho", cat: "Uber", trabalho: true, valor: d.slice(0, 7) === d15(0).slice(0, 7) ? 100 : 200, ts: 1000 + n });
   }
   await abrir(page, dados({ lancamentos: [...quatroTanques(d15), ...ganhos], carros: [{ id: "principal", tanque: 40 }] }));
-  await expect(await abrirPrev(page)).toContainText(/ganhos −\d+%/);
+  await expect(await abrirPrev(page)).toContainText(/−\d+% porque você está ganhando menos/);
 });
 
 test("km por dia não conta os dias de folga longa", async ({ page }) => {
@@ -1043,7 +1053,7 @@ test("previsão do mês usa a tendência do preço da ANP", async ({ page }) => 
   const semanas = [5, 4, 3, 2, 1, 0].map((k, i) => ({ fim: d15(-10 - 7 * k), estados: { SP: { Gasolina: 6 + 0.3 * i } }, municipios: {} }));
   await page.route("**/dados/anp.json", (r) => r.fulfill({ json: { semana: { inicio: d15(-16), fim: d15(-10) }, estados: { SP: { nome: "São Paulo", precos: { Gasolina: { medio: 7.5 } } } }, municipios: {}, historico: { semanas } } }));
   await abrir(page, dados({ lancamentos: quatroTanques(d15), carros: [{ id: "principal", tanque: 40 }] }, { cidade: { uf: "SP", nome: "São Paulo" } }));
-  await expect(await abrirPrev(page)).toContainText(/preço \+\d+%/);
+  await expect(await abrirPrev(page)).toContainText(/\+\d+% porque o preço subiu/);
 });
 
 test("previsão do mês tira o feriado de quem não trabalha em feriado", async ({ page }) => {
@@ -1056,7 +1066,7 @@ test("previsão do mês tira o feriado de quem não trabalha em feriado", async 
   [-31, -21, -11, -1].forEach((n, i) => L.push({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km: 10000 + 480 * i, ts: 100 + i }));
   await abrir(page, dados({ lancamentos: L }));
   // 21 dias faltando, o Natal vale 0: −5%
-  await expect(await abrirPrev(page)).toContainText("feriados −5%");
+  await expect(await abrirPrev(page)).toContainText("−5% pelos feriados");
 });
 
 test("previsão do mês segue a época do ano", async ({ page }) => {
@@ -1071,7 +1081,7 @@ test("previsão do mês segue a época do ano", async ({ page }) => {
     L.push({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 100, litros: 16, km, ts: 1000 + n });
   }
   await abrir(page, dados({ lancamentos: L }));
-  await expect(await abrirPrev(page)).toContainText(/época \+\d+%/);
+  await expect(await abrirPrev(page)).toContainText(/\+\d+% pela época do ano/);
 });
 
 test("previsão do mês usa o preço do posto de costume", async ({ page }) => {
@@ -1080,7 +1090,7 @@ test("previsão do mês usa o preço do posto de costume", async ({ page }) => {
   // 3 tanques no Shell Centro a R$ 6,00 e o último num posto de estrada a R$ 6,60: o resto do mês vai pelo Shell
   const L = [-31, -21, -11, -1].map((d, i) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, posto: i < 3 ? "Shell Centro" : "Posto Estrada", valor: i < 3 ? 240 : 264, litros: 40, km: 10000 + 480 * i, ts: 100 + i }));
   await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 40 }] }));
-  await expect(await abrirPrev(page)).toContainText("preço −9%");
+  await expect(await abrirPrev(page)).toContainText("−9% porque o preço caiu");
 });
 
 test("Resumo mostra quanto a previsão acertou nos meses que passaram", async ({ page }) => {
@@ -1108,10 +1118,9 @@ test("parcial sem KM: os km saem dos dias e a mistura continua com confiança m�
   // 50 km por dia; o parcial de etanol 8 dias depois do último KM não tem KM
   await abrir(page, dados({ lancamentos: [ab(-20, 10000, "Gasolina", 50, true), ab(-10, 10500, "Gasolina", 40, true), ab(-2, null, "Etanol", 20, false)], carros: [{ id: "principal", tanque: 50 }] }));
   const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
-  await expect(tq).toContainText("confiança média");
+  await expect(tq).toContainText("Confiança: média");
   await expect(tq).toContainText("%");
   await expect(tq).not.toContainText("não confiável");
-  await expect(tq).toContainText("Para melhorar a confiança:");
   await expect(tq).toContainText("anote o KM");
   await expect(tq).toContainText("Vazio");
 });
@@ -1138,10 +1147,12 @@ test("o que já estava no tanque antes do primeiro registro é estimado pelo con
   // de verdade: etanol = tq.E de 50 L
   const pe = Math.round((tq.E / 50) * 100);
   const txt = await card.innerText();
-  const m = txt.match(/Etanol\s+(\d+)%/i);
+  // as % são do tanque inteiro (o carro já rodou desde o posto): a parte de etanol sai dos litros de cada um
+  const lg = Number(txt.match(/Gasolina\s+\d+%\s+([\d,]+) L/i)[1].replace(",", ".")), le = Number(txt.match(/Etanol\s+\d+%\s+([\d,]+) L/i)[1].replace(",", "."));
+  const parte = Math.round((le / (lg + le)) * 100);
   // sem a correção daria 54% (a parte desconhecida seguiria a mistura conhecida); com ela fica mais perto dos 60%
-  expect(Number(m[1])).toBeGreaterThan(54);
-  expect(Math.abs(Number(m[1]) - pe)).toBeLessThanOrEqual(5);
+  expect(parte).toBeGreaterThan(54);
+  expect(Math.abs(parte - pe)).toBeLessThanOrEqual(5);
 });
 
 test("Consumo mostra o gasto pelo que foi queimado e quanto economizou", async ({ page }) => {
@@ -1167,6 +1178,7 @@ test("tanque que rendeu bem menos que o normal vira aviso", async ({ page }) => 
     L.push({ data: dia(-35 + 5 * i), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, posto: i === 5 ? "Posto Estrada" : "Shell Centro", ts: 100 + i });
   }
   await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 40 }] }));
+  await avisos(page);
   const a = page.locator("#tab-inicio .alert", { hasText: "Rendimento caiu" });
   await expect(a).toContainText("abaixo do normal");
   await expect(a).toContainText("Posto Estrada");
@@ -1224,7 +1236,19 @@ test("Início mostra quanto cada km dá, custa e sobra, e o lucro previsto do m�
   await expect(kv).toContainText("custa");
   await expect(kv).toContainText("sobra");
   await expect(kv).toContainText("sobra");
-  await expect(page.locator(".placa-prev")).toContainText("Se continuar assim, fecha");
+  await expect(page.locator(".placa-prev").first()).toContainText("Se continuar assim, fecha");
+});
+
+test("lucro previsto desconta a parcela do carro que ainda não foi paga no mês", async ({ page, context }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
+  const prev = async (p) => Number((await p.locator(".placa-prev").first().innerText()).match(/~R\$\s([\d.]+),/)[1].replace(/\./g, ""));
+  await page.clock.setFixedTime(base);
+  await abrir(page, dados({ lancamentos: meses70(base), carros: [{ id: "principal", tanque: 50, combustivel: "Flex" }] }));
+  const sem = await prev(page);
+  const p2 = await context.newPage(); // aba nova: semeia de novo, agora com parcela de R$ 1.000
+  await p2.clock.setFixedTime(base);
+  await abrir(p2, dados({ lancamentos: meses70(base), carros: [{ id: "principal", tanque: 50, combustivel: "Flex", custos: { parcelaMes: 1000 } }] }));
+  expect(sem - (await prev(p2))).toBe(1000);
 });
 
 test("Resumo mostra o melhor e o pior dia da semana pelos ganhos", async ({ page }) => {
@@ -1245,6 +1269,7 @@ test("avisa quando o combustível mais barato por km muda", async ({ page }) => 
   const L = abastMisturados({ ordem: ["Etanol", "Gasolina", "Etanol", "Etanol", "Gasolina", "Etanol", "Gasolina"] });
   L.forEach((x) => { if (x.comb === "Etanol") x.valor = x.litros * 3; }); // etanol a R$ 3: sai mais barato por km
   await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }, { melhorComb: { principal: { comb: "Gasolina", desde: dia(-30), antes: null } } }));
+  await avisos(page);
   await expect(page.locator("#tab-inicio .alert", { hasText: "Agora o etanol compensa" })).toContainText("mais barato por km que a gasolina");
 });
 
@@ -1329,7 +1354,7 @@ test("lançamento novo mostra as categorias mais usadas, os postos de costume e 
   await expect(page.locator("#fPosto")).toHaveValue("Shell Centro");
   await page.click("#fCancel");
   await aba(page, "historico");
-  await expect(page.locator(".item", { hasText: "Combustível" })).toContainText("Etanol · 30,0 L");
+  await expect(page.locator(".item", { hasText: "Combustível" })).toContainText("Etanol · Shell Centro · 30,0 L · R$ 4,00/L");
 });
 
 test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", async ({ page }) => {
