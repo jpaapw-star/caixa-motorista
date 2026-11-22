@@ -126,11 +126,42 @@ test("abre e pode ser instalado", async ({ page, request }) => {
   await expect(page.locator(".btn-print")).toHaveCount(0); // leitura de print com IA só existe dentro do Claude
 });
 
-test("primeira vez: o app já vem com a lista de manutenção", async ({ page }) => {
+test("primeira vez: sem carro, o Carro mostra só o botão de cadastrar", async ({ page }) => {
   await abrir(page);
+  await aba(page, "carro");
+  await expect(page.locator("#tab-carro #editCar")).toHaveText("Cadastrar carro");
+  await expect(page.locator("#tab-carro [data-csub]")).toHaveCount(0);
+  await expect(page.locator("#addCar")).toHaveCount(0);
+});
+test("primeira vez com carro: o app já vem com a lista de manutenção, cada uma com o prazo", async ({ page }) => {
+  await abrir(page, dados({ carros: [{ id: "principal", tanque: 40 }] }, { servicosPadrao: false }));
   await aba(page, "carro");
   await parte(page, "manut");
   await expect(page.locator(".mrow")).toHaveCount(13);
+  await expect(page.locator("#tab-carro")).not.toContainText("Toque em Feito hoje");
+  await expect(page.locator(".mrow", { hasText: "Troca de óleo" })).toContainText(/a cada [\d.]+ km/);
+});
+
+test("um gasto de manutenção lançado com o nome do serviço marca o serviço como feito", async ({ page }) => {
+  await abrir(page, dados({ carros: [{ id: "principal", tanque: 40 }], lancamentos: [{ data: dia(-40), tipo: "gasto", cat: "Manutenção", valor: 289.9, desc: "Troca de óleo e filtro", ts: 1 }] }, { servicosPadrao: false }));
+  await aba(page, "carro");
+  await parte(page, "manut");
+  await expect(page.locator(".mrow", { hasText: "Troca de óleo" })).toContainText(/faltam/);
+  await expect(page.locator(".mrow", { hasText: "Filtro de combustível" })).not.toContainText(/faltam/);
+});
+
+test("o que falta separar no mês é o mesmo no Início e em Custos, e a sugestão do dia não passa de metade do lucro do dia", async ({ page }) => {
+  const L = [];
+  for (let n = -6; n <= 0; n++) L.push({ data: dia(n), tipo: "ganho", cat: "Uber", trabalho: true, valor: 100, ts: 10 + n });
+  await abrir(page, dados({ carros: [{ id: "principal", tanque: 40, custos: { parcelaMes: 3000 } }], lancamentos: L, separados: [{ data: dia(0), valor: 10, ts: 1 }] }));
+  const caixa = page.locator("#tab-inicio .caixa");
+  const falta = (await caixa.innerText()).match(/Faltam (R\$\s[\d.,]+) no mês/)[1];
+  // R$ 3.000 de parcela por mês daria mais de R$ 100 por dia; o lucro do dia é R$ 100, então pede no máximo R$ 50
+  const hoje = Number((await caixa.locator(".big").innerText()).match(/R\$\s([\d.,]+)/)[1].replace(/\./g, "").replace(",", "."));
+  expect(hoje).toBeLessThanOrEqual(50);
+  await aba(page, "carro");
+  await parte(page, "custos");
+  await expect(page.locator(".card", { hasText: "Caixinha do carro" })).toContainText("Faltam no mês" + falta.replace("R$", "R$"));
 });
 
 test("lança ganho e abastecimento, e os dados continuam depois de fechar", async ({ page }) => {
@@ -224,7 +255,7 @@ test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = 
   const total = page.locator(".card", { hasText: "Caixinha do carro" }).locator(".custo-hero b.big");
   await expect(pneus).toContainText("R$ 45,94 /mês");
   await expect(pneus).toContainText("24 meses");
-  await expect(pneus).toContainText("hoje R$ 1.000,00, com inflação"); // 1.000 × 1,05² = 1.102,50 ÷ 24 meses
+  await expect(pneus).toContainText(/R\$\s1\.102,\d\d em/); // 1.000 × 1,05² ≈ 1.102,50
   await expect(page.locator(".card", { hasText: "Caixinha do carro" }).locator(".custo-hero")).toContainText("Para manter o carro em");
   await aba(page, "inicio");
   await page.click("#addSep");
@@ -238,7 +269,7 @@ test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = 
 });
 
 test("Tabela FIPE: valor do carro e quanto ele perde por ano", async ({ page }) => {
-  await abrir(page, dados());
+  await abrir(page, dados({ carros: [{ id: "principal", tanque: 40 }] }));
   await aba(page, "carro");
   await parte(page, "custos");
   await page.click("#fipeBtn");
@@ -550,7 +581,7 @@ test.describe("no Chrome", () => {
 test("novo carro: escolhendo marca, modelo e ano na FIPE, o resto se preenche sozinho", async ({ page }) => {
   await abrir(page, dados());
   await aba(page, "carro");
-  await page.click("#addCar");
+  await page.click("#editCar"); // sem carro ainda: "Cadastrar carro"
   await page.selectOption("#cfMarca", "23");
   await page.fill("#cfModelo", "onix");
   await expect(page.locator(".sug")).toHaveCount(1); // a lista filtra enquanto digita
@@ -588,7 +619,7 @@ test("novo carro: se a BrasilAPI falha, busca na reserva; e dá para digitar à 
   });
   await abrir(page, dados());
   await aba(page, "carro");
-  await page.click("#addCar");
+  await page.click("#editCar"); // sem carro ainda: "Cadastrar carro"
   await expect(page.locator("#cM")).toBeHidden(); // só a busca, sem campos repetidos
   await page.selectOption("#cfMarca", "23");
   await page.fill("#cfModelo", "onix");
@@ -1163,7 +1194,7 @@ test("Consumo mostra o gasto pelo que foi queimado e quanto economizou", async (
   await aba(page, "carro");
   await parte(page, "consumo");
   const m = page.locator("#tab-carro .metrics");
-  await expect(m).toContainText(/Queimou em [a-zç]+\s*R\$\s8\d\d,\d\d/i);
+  await expect(m).toContainText(/Combustível usado em [a-zç]+\s*R\$\s8\d\d,\d\d/i);
   await expect(m).toContainText(/gasolina R\$\s[\d.,]+ · etanol R\$\s[\d.,]+/);
   await expect(m).toContainText(/(Economizou|Gastou a mais) em/i);
 });
