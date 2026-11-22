@@ -500,6 +500,23 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   .sheet { align-items: center; }
   .sheet-panel { border-radius: 18px; max-height: 88%; }
 }
+/* revisão 2026-11-22 (500 reclamações): nome e valor de cada linha não saem da tela; celular pequeno (até 360 px) */
+.meta-row .split > b:first-child { white-space: normal; min-width: 0; }
+.meta-row .split > small:first-child { min-width: 0; }
+@media (max-width: 360px) {
+  .top .brand { display: none; }
+  .top { justify-content: center; }
+  .month b { min-width: 0; white-space: nowrap; font-size: 15px; }
+  .cp-row { flex-wrap: wrap; align-items: flex-start; }
+  .cp-dir { text-align: left; }
+  .cp-row .v { font-size: 22px; }
+  .car-nome { font-size: 20px; }
+  .ficha-top { flex-wrap: wrap; }
+  .kv3 b { font-size: 17px; }
+  .seg.seg4 button { font-size: 12px; }
+  .caixa .split, .custo-hero .split { flex-wrap: wrap; }
+  .meta-row .split { flex-wrap: wrap; }
+}
 </style>
 
 <header class="top">
@@ -765,6 +782,13 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     }
     return { st, prox, proxData, fKm, fDias, diasKm, dataKm: diasKm != null ? new Date(Date.now() + diasKm * 864e5) : null };
   }
+  // prazo de um serviço que ainda não tem a última vez: "a cada 10.000 km ou 12 meses"
+  function cadaTxt(m) {
+    const p = [m.cadaKm > 0 ? num(m.cadaKm) + " km" : "", m.cadaMeses > 0 ? (m.cadaMeses >= 12 && m.cadaMeses % 12 === 0 ? (m.cadaMeses / 12) + (m.cadaMeses === 12 ? " ano" : " anos") : num(m.cadaMeses, m.cadaMeses % 1 ? 1 : 0) + " meses") : ""].filter(Boolean);
+    return p.length ? "a cada " + p.join(" ou ") : "";
+  }
+  // dias até vencer (o que chegar primeiro: data ou km no seu ritmo), para pôr o mais urgente em cima
+  const diasAte = (r) => Math.min(r.fDias != null ? r.fDias : 1e9, r.diasKm != null ? r.diasKm : 1e9);
   const ST_LBL = { ok: "Em dia", breve: "Em breve", venc: "Vencida", none: "Sem registro" };
   function mResumo(r) {
     const parts = [];
@@ -974,7 +998,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         wk += (b.k - a.k) * peso; wd += dd * peso;
       }
       const kmDia = wd > 0 ? wk / wd : kmR / dias;
-      return { kmDia, kmMes: kmDia * 30.44, fonte: "pelos seus registros", dias: Math.round(dias), poucos: dias < 14 };
+      return { kmDia, kmMes: kmDia * 30.44, fonte: "na sua média", dias: Math.round(dias), poucos: dias < 14 };
     }
     const c = car.custos || {};
     const est = Number(c.kmDia) > 0 ? Number(c.kmDia) : 0;
@@ -1019,9 +1043,24 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   }
   // ----- manutenção que aprende com o que você registra -----
   // Usa os registros do histórico ligados ao serviço (ou com o mesmo nome, no mesmo carro).
+  // Palavras que identificam o serviço num gasto de manutenção lançado à mão ("Troca de óleo e filtro" → troca de óleo).
+  const SERV_CHAVE = ["oleo", "correia", "bateria", "vela", "pastilha", "alinhamento", "rodizio", "pneu", "arrefecimento", "fluido de freio", "filtro de ar", "ar-condicionado", "ar condicionado", "combustivel"];
+  function gastoEhServico(desc, servico) {
+    const sa = (t) => norm(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const d = sa(desc), sv = sa(servico);
+    if (d.length < 4 || !sv) return false;
+    if (sv.includes(d) || d.includes(sv)) return true;
+    const k = SERV_CHAVE.filter((c) => sv.includes(c));
+    return k.length > 0 && k.every((c) => d.includes(c));
+  }
   function histDe(m) {
     const nome = norm(m.servico);
-    return S.hist.filter((h) => (h.mid ? h.mid === m.id : norm(h.servico) === nome && cid(h) === cid(m))).sort(byDataTs);
+    const H = S.hist.filter((h) => (h.mid ? h.mid === m.id : norm(h.servico) === nome && cid(h) === cid(m)));
+    // um gasto de Manutenção lançado com o nome do serviço também conta como feito (se não houver registro no mesmo dia)
+    const dias = new Set(H.map((h) => h.data));
+    const G = S.lanc.filter((x) => x.tipo === "gasto" && x.cat === "Manutenção" && cid(x) === cid(m) && x.data && !dias.has(x.data) && gastoEhServico(x.desc, m.servico))
+      .map((x) => ({ servico: m.servico, data: x.data, km: Number(x.km) || 0, valor: Number(x.valor) || 0, ts: x.ts, doGasto: true }));
+    return H.concat(G).sort(byDataTs);
   }
   function aprendizado(m) {
     const H = histDe(m);
@@ -1357,6 +1396,9 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
           // mês atual com previsão: um quadro só, gasto até hoje × previsão, com a barra do quanto já foi
           if (atual && prev) {
             const prox = pc.porAbast && pc.abast.length ? " · abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "";
+            // previsão igual ao já gasto: sem abastecer até o fim do mês; um número só, sem barra cheia
+            if (prev - s.comb < 1) return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
+            <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">sem abastecer até o fim do mês</span></span></span></button>`;
             return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
             <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">gasto até hoje</span></span><span class="cp-dir"><span class="v cp-prev">${brl(prev)}</span><span class="hint">previsão${prox}</span></span></span>
             <span class="cp-bar"><i style="width:${Math.min(100, (s.comb / prev) * 100).toFixed(1)}%"></i></span></button>`;
@@ -1414,7 +1456,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         return `<button data-dia="${esc(d.id)}">${[d.horas > 0 ? horasStr(d.horas) : "", d.corridas ? d.corridas + " corridas" : "", kmd != null ? num(kmd) + " km" + (d.kmPass ? " (" + num(d.kmPass) + " com passageiro)" : "") : ""].filter(Boolean).join(" · ") || "Dia de trabalho"}</button>`;
       }).join("");
       html += `<div class="day">
-        <div class="day-h"><div><b>${esc(wd)}</b><div class="meta">${meta}</div></div><span class="val ${g - x >= 0 ? "g" : "x"}">${brl(g - x)}</span></div>
+        <div class="day-h"><div><b>${esc(wd)}</b><div class="meta">${meta}</div></div>${L.length > 1 || D.length ? `<span class="val ${g - x >= 0 ? "g" : "x"}">${g - x < 0 ? "− " + brl(x - g) : brl(g - x)}</span>` : ""}</div>
         ${L.map((it) => `<button class="item" data-lanc="${esc(it.id)}"><div><b>${esc(it.cat)}</b>${(() => { const sub = [it.cat === "Combustível" ? it.comb : "", it.posto, it.desc, it.litros && it.cat !== "Combustível" ? num(it.litros, 1) + " " + unidade(it.comb) : "", it.cat === "Combustível" && it.litros > 0 ? brl(it.valor / it.litros) + "/" + unidade(it.comb) : ""].filter(Boolean).join(" · "); return sub ? `<span>${esc(sub)}</span>` : ""; })()}</div><span class="val ${it.tipo === "ganho" ? "g" : "x"}">${it.tipo === "ganho" ? "+" : "−"} ${brl(it.valor)}</span></button>`).join("")}
       </div>`;
     }
@@ -2488,7 +2530,8 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   function dicaPrev(pc, cm) {
     const linhas = [];
     if (pc.faixa) linhas.push(pc.faixa[0] - (pc.gasto || 0) < 1 ? "até " + brl(pc.faixa[1]) : "entre " + brl(pc.faixa[0]) + " e " + brl(pc.faixa[1]));
-    if (Object.keys(pc.porComb).length > 1) linhas.push(Object.entries(pc.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v)).join(" · "));
+    const partes = Object.entries(pc.porComb).map(([c, v]) => [c, (cm[c] || 0) + v]).filter(([, v]) => v >= 0.5);
+    if (partes.length > 1) linhas.push(partes.sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl(v)).join(" · "));
     if (pc.porAbast) linhas.push(pc.abast.length ? "abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "sem abastecer até o fim do mês");
     else if (!linhas.length) linhas.push("gasto até hoje + " + brl(pc.combDia) + " por dia");
     const pct = (f) => (f < 1 ? "−" : "+") + num(Math.abs(f - 1) * 100) + "%";
@@ -2601,27 +2644,24 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     const t0 = !primeiro ? t : primeiro < ym + "-01" ? 1 : Math.min(t, Number(primeiro.slice(8, 10)));
     const sepAntes = cx.sepMes - cx.sepHoje;
     const restantes = N - t + 1;
-    const hojeTotal = D > 0 ? Math.max(0, (D * (N - t0 + 1) - sepAntes) / restantes) : 0;
+    // nunca pede para separar num dia mais que metade do lucro de um dia de trabalho: o que não couber fica para os próximos meses
+    const lucroDia = stats(ym).lucroDia;
+    const teto = lucroDia > 0 ? lucroDia * 0.5 : Infinity;
+    const hojeTotal = D > 0 ? Math.min(teto, Math.max(0, (D * (N - t0 + 1) - sepAntes) / restantes)) : 0;
     const faltaHoje = Math.max(0, hojeTotal - cx.sepHoje);
     const adiant = sepAntes - D * (t - t0);
-    const amanha = t < N && D > 0 ? Math.max(0, (D * (N - t0 + 1) - cx.sepMes) / (N - t)) : null;
-    return { cd, D, hojeTotal, faltaHoje, adiant, amanha, cx, metaMes: D * (N - t0 + 1), N, t, t0 };
+    const amanha = t < N && D > 0 ? Math.min(teto, Math.max(0, (D * (N - t0 + 1) - cx.sepMes) / (N - t))) : null;
+    const metaMes = D * (N - t0 + 1);
+    // o que falta para a meta do mês: o mesmo número no Início e em Carro › Custos
+    const faltaMes = Math.max(0, metaMes - cx.sepMes);
+    return { cd, D, hojeTotal, faltaHoje, adiant, amanha, cx, metaMes, faltaMes, N, t, t0 };
   }
   function statusDia(rc) {
-    const D = rc.D, cx = rc.cx;
-    if (cx.sepHoje > 0 && rc.faltaHoje < 0.5) {
-      const adT = cx.sepMes - D * (rc.t - rc.t0 + 1);
-      let txt = `Hoje está coberto.`;
-      if (adT > D * 0.05) txt += ` ${brl(adT)} adiantado no mês.`;
-      else if (adT < -D * 0.05) txt += ` Faltam ${brl(-adT)} no mês.`;
-      if (rc.amanha != null) txt += ` Amanhã: ${brl(rc.amanha)}.`;
-      return txt;
-    }
-    let txt = cx.sepHoje > 0 ? `Já separou ${brl(cx.sepHoje)} hoje. ` : "";
-    if (rc.adiant > D * 0.05) txt += `${brl(rc.adiant)} adiantado no mês.`;
-    else if (rc.adiant < -D * 0.05) txt += `Faltam ${brl(-rc.adiant)} no mês.`;
-    else txt += "Em dia com o mês.";
-    return txt;
+    const cx = rc.cx, p = [];
+    if (cx.sepHoje > 0 && rc.faltaHoje < 0.5) p.push("Hoje está coberto");
+    else if (cx.sepHoje > 0) p.push("Já separou " + brl(cx.sepHoje) + " hoje");
+    p.push(rc.faltaMes > 0.5 ? "Faltam " + brl(rc.faltaMes) + " no mês" : "Meta do mês completa");
+    return p.join(" · ");
   }
   // sugestão de quanto separar de um ganho: o que falta hoje (ou a média do dia, para ganhos de outros dias)
   function sugestaoSep(F) {
@@ -2715,7 +2755,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
               const q = queimadoMes(car, S.ym);
               if (!q) return [];
               const pc = Object.entries(q.porComb).filter(([, o]) => o.v >= 0.5);
-              const r = [["Queimou em " + mes, brl(q.total) + (pc.length > 1 ? `<br><small>${pc.map(([c, o]) => c.toLowerCase() + " " + brl(o.v)).join(" · ")}</small>` : "")]];
+              const r = [["Combustível usado em " + mes, brl(q.total) + (pc.length > 1 ? `<br><small>${pc.map(([c, o]) => c.toLowerCase() + " " + brl(o.v)).join(" · ")}</small>` : "")]];
               if (q.eco && Math.abs(q.eco.valor) >= 1) r.push([q.eco.valor >= 0 ? "Economizou em " + mes : "Gastou a mais em " + mes,
                 `<span style="color:var(--${q.eco.valor >= 0 ? "ganho" : "gasto"})">${brl(Math.abs(q.eco.valor))}</span><br><small>do que só com ${q.eco.outro.toLowerCase()}</small>`]);
               return r;
@@ -2761,38 +2801,38 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
             <b class="big num">${brl(rc.metaMes)}</b>
             ${rc.cd.partes.map(([n, v]) => `<div class="split"><small>${esc(n)}</small><small class="num">${brl(v * dm)}</small></div>`).join("")}</div>`; })()
             : `<p class="note" style="margin:0">Cadastre os custos fixos e os serviços de manutenção para o app prever os gastos.</p>`}
-          <div class="split"><span>Separado para os carros</span><b class="num">${brl(cx.entradas)}</b></div>
-          <div class="split"><span>Gasto com os carros</span><b class="num">− ${brl(cx.saidas)}</b></div>
-          <div class="split" style="border-top:1px solid var(--line);padding-top:8px"><b>${cx.saldo < -0.005 ? "Faltando" : "Saldo"}</b><b class="num">${brl(Math.abs(cx.saldo))}</b></div>
-          ${S.seps.length ? `<div><span class="label">Separado à parte</span><div class="mlist" style="margin-top:6px">${S.seps.slice().sort(byDataTs).reverse().slice(0, 6).map((x) => `<button class="frow" data-sep="${esc(x.id)}"><div class="fi"><b>${dBR(x.data).slice(0, 5)}</b><span>${esc(x.nota || "")}</span></div><span></span><span class="val">${brl(x.valor)}</span></button>`).join("")}</div></div>` : ""}
+          ${(() => { const rc = recomendacao(); return `<div class="split"><span>Separado em ${MES[new Date().getMonth()]}</span><b class="num">${brl(cx.sepMes)}</b></div>
+          ${rc.D > 0 ? `<div class="split" style="border-top:1px solid var(--line);padding-top:8px"><b>${rc.faltaMes > 0.5 ? "Faltam no mês" : "Meta do mês completa"}</b><b class="num">${rc.faltaMes > 0.5 ? brl(rc.faltaMes) : ""}</b></div>` : ""}
+          ${cx.saldo > 0.005 ? `<div class="split"><span>Na caixinha</span><b class="num">${brl(cx.saldo)}</b></div>` : ""}`; })()}
+          ${S.seps.length ? `<div><span class="label">Separados</span><div class="mlist" style="margin-top:6px">${S.seps.slice().sort(byDataTs).reverse().slice(0, 6).map((x) => `<button class="frow" data-sep="${esc(x.id)}"><div class="fi"><b>${dBR(x.data).slice(0, 5)}</b><span>${esc(x.nota || "")}</span></div><span></span><span class="val">${brl(x.valor)}</span></button>`).join("")}</div></div>` : ""}
         </div>
         ${pv.metas.length ? `<div class="card"><div class="sec-h"><h2>Para onde vai a caixinha</h2></div>
           ${pv.metas.length ? `<div class="mlist">${pv.metas.map((t) => `<button class="meta-row" ${t.tipo === "manut" ? `data-meta="${esc(t.id)}"` : `data-metafixo="1"`}>
               <div class="split"><b>${esc(t.nome)}</b><b class="num">${brl(t.mensal)}<small> /mês</small></b></div>
-              <div class="split"><small>${brl(t.valor)} ${t.vencido ? "· vencido, precisa agora" : "em " + mesAno(t.data) + " · " + t.meses + (t.meses === 1 ? " mês" : " meses")}${t.fonte === "estimado" ? " · valor estimado" : t.fonte === "média paga" ? " · média do que você pagou" : ""}${t.inflado ? " · hoje " + brl(t.hoje) + ", com inflação" : ""}</small><small>${t.guardado > 0 ? "já tem " + brl(t.guardado) : ""}</small></div>
+              <div class="split"><small>${brl(t.valor)} ${t.vencido ? "· vencido, precisa agora" : "em " + mesAno(t.data) + " · " + t.meses + (t.meses === 1 ? " mês" : " meses")}${t.fonte === "estimado" ? " · estimado" : t.fonte === "média paga" ? " · média paga" : ""}</small><small>${t.guardado > 0 ? "já tem " + brl(t.guardado) : ""}</small></div>
               <div class="track"><i style="width:${Math.min(100, (t.guardado / t.valor) * 100)}%"></i></div>
             </button>`).join("")}</div>`
           : `<p class="note" style="margin:0">Nenhum gasto previsto ainda. Cadastre serviços em Manutenção ou os custos fixos.</p>`}
           ${pv.metas.length ? `<p class="note" style="margin:0">Toque num item para mudar o valor ou a data.</p>` : ""}
           ${pv.estimados ? `<p class="note" style="margin:0">${pv.estimados} ${pv.estimados === 1 ? "item usa" : "itens usam"} valor estimado. Troque pelo preço da sua oficina.</p>` : ""}
           ${pv.semKm ? `<p class="note" style="margin:0">${pv.semKm} ${pv.semKm === 1 ? "serviço tem" : "serviços têm"} prazo só em km. Anote o KM do carro algumas vezes (ou informe quantos km roda por dia em "Editar custos fixos") para ${pv.semKm === 1 ? "ele entrar" : "eles entrarem"} na conta.</p>` : ""}
-          ${pv.metas.length ? `<details class="note"><summary>Como é calculado</summary>Para cada gasto, o app tira o que já foi guardado para ele e divide pelos meses que faltam, contando este. O dinheiro vai primeiro para o gasto que vence antes. O app só faz a conta: guarde o dinheiro numa conta separada.</details>` : ""}
+          ${pv.metas.length ? `<details class="note"><summary>Como é calculado</summary>Para cada gasto, o app tira o que já foi guardado para ele e divide pelos meses que faltam, contando este. Os valores sobem uns 5% ao ano até a data (inflação). O dinheiro vai primeiro para o gasto que vence antes. O app só faz a conta: guarde o dinheiro numa conta separada.</details>` : ""}
         </div>` : ""}`;
     } else if (sub === "manut") {
       const lista = S.manut.filter((m) => cid(m) === carId).map((m) => ({ m, r: mStatus(m), e: efetivo(m) }))
-        .sort((a, b) => ({ venc: 0, breve: 1, ok: 2, none: 3 }[a.r.st] - { venc: 0, breve: 1, ok: 2, none: 3 }[b.r.st]) || String(a.m.servico).localeCompare(b.m.servico));
+        .sort((a, b) => ({ venc: 0, breve: 1, ok: 2, none: 3 }[a.r.st] - { venc: 0, breve: 1, ok: 2, none: 3 }[b.r.st]) || (diasAte(a.r) - diasAte(b.r)) || String(a.m.servico).localeCompare(b.m.servico));
       const hist = S.hist.filter((h) => cid(h) === carId).sort(byDataTs).reverse();
       pane = `<div class="sec-h"><h2>Manutenção</h2><button class="btn sm ghost" id="addServ"${off}>+ Serviço</button></div>
         ${lista.length ? `<div class="mlist">${lista.map(({ m, r, e }) => `
           <div class="mrow">
-            <button class="info" data-serv="${esc(m.id)}"><b>${esc(m.servico)}</b><span>${r.st === "none" ? "Toque em Feito hoje quando fizer" : (mResumo(r) || "Próxima: " + [r.prox ? num(r.prox) + " km" : "", r.proxData ? dBR(dStr(r.proxData)) : ""].filter(Boolean).join(" ou "))}</span>${e.aprendeuMeses || e.aprendeuKm ? `<small>Seu ritmo: a cada ${[e.aprendeuKm ? "~" + num(e.cadaKm) + " km" : "", e.aprendeuMeses ? "~" + num(e.cadaMeses, e.cadaMeses % 1 ? 1 : 0) + " meses" : ""].filter(Boolean).join(" ou ")}</small>` : ""}</button>
+            <button class="info" data-serv="${esc(m.id)}"><b>${esc(m.servico)}</b><span>${r.st === "none" ? cadaTxt(e) : (mResumo(r) || "Próxima: " + [r.prox ? num(r.prox) + " km" : "", r.proxData ? dBR(dStr(r.proxData)) : ""].filter(Boolean).join(" ou "))}</span>${e.aprendeuMeses || e.aprendeuKm ? `<small>Seu ritmo: a cada ${[e.aprendeuKm ? "~" + num(e.cadaKm) + " km" : "", e.aprendeuMeses ? "~" + num(e.cadaMeses, e.cadaMeses % 1 ? 1 : 0) + " meses" : ""].filter(Boolean).join(" ou ")}</small>` : ""}</button>
             <div class="side">${r.st === "venc" || r.st === "breve" ? `<span class="pill ${r.st}">${ST_LBL[r.st]}</span>` : ""}<button class="btn sm ghost" data-feito="${esc(m.id)}">Feito hoje</button></div>
           </div>`).join("")}</div>` : `<div class="empty"><b>Nenhum serviço cadastrado</b><span>Adicione troca de óleo, pneus, revisão… e o app avisa quando estiver chegando a hora.</span></div>`}
         <div class="sec-h"><h2>Histórico do carro</h2><div class="btn-row"><button class="btn sm ghost" id="addHist"${off}>+ Registro</button>${S.downloads && hist.length ? `<button class="btn sm ghost" id="pdfHist">Baixar PDF</button>` : ""}</div></div>
         ${hist.length ? `<div class="mlist">${hist.map((h) => `<button class="frow" data-hist="${esc(h.id)}">
             <div class="fi"><b>${esc(h.servico)}</b><span>${[dBR(h.data), h.km ? "KM " + num(h.km) : "", h.local ? esc(h.local) : ""].filter(Boolean).join(" · ")}</span></div>
             <span></span><span class="val">${h.valor ? brl(h.valor) : ""}</span></button>`).join("")}</div>`
-          : `<p class="note" style="margin:0">Cada serviço feito no carro fica guardado aqui. Na hora de vender, baixe o histórico em PDF para mostrar ao comprador.</p>`}`;
+          : ""}`;
     } else {
       const lista = S.docs.filter((d) => docCar(d) === carId || docCar(d) === "pessoa").map((d) => ({ d, r: docStatus(d) }))
         .sort((a, b) => ({ venc: 0, breve: 1, ok: 2, none: 3 }[a.r.st] - { venc: 0, breve: 1, ok: 2, none: 3 }[b.r.st]) || String(a.d.venc || "9").localeCompare(String(b.d.venc || "9")));
@@ -2803,7 +2843,14 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
           : `<div class="empty"><b>Nenhum documento cadastrado</b><span>Anote a validade da CNH, do licenciamento, do seguro e do IPVA. O app avisa na tela inicial antes de vencer.</span><button class="btn sm primary" id="addDoc2"${off}>Adicionar documento</button></div>`}
 `;
     }
-    $("#tab-carro").innerHTML = `<h1 class="ptitulo">Carro</h1>` + seletor + ficha + seg + pane;
+    // sem carro cadastrado e sem abastecimento: só o botão de cadastrar (custos, caixinha e serviços de um carro que não existe confundem)
+    const semCarro = !variosCarros() && !car.modelo && !car.tanque && !car.placa && !(car.custos && Object.values(car.custos).some((v) => Number(v) > 0))
+      && !car.kmManual && !(car.leituras && car.leituras.length) && !S.dias.length
+      && !S.lanc.some((x) => x.cat === "Combustível" || x.cat === "Manutenção" || Number(x.km) > 0) && !S.hist.length && !S.docs.length
+      && !S.manut.some((m) => m.custo || m.ultData || m.ultKm || m.proxData);
+    $("#tab-carro").innerHTML = `<h1 class="ptitulo">Carro</h1>` + (semCarro
+      ? `<div class="ficha"><div class="ficha-txt"><b class="car-nome">Cadastre seu carro</b></div><div class="btn-row"><button class="btn primary largo" id="editCar"${off}>Cadastrar carro</button></div></div>`
+      : seletor + ficha + seg + pane);
   }
 
   // ----- custos, documentos e histórico -----
@@ -3157,7 +3204,10 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         const v = valor(), d = b.querySelector("#mD").value, out = b.querySelector("#mPrev");
         if (v > 0 && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
           const n = mesesAte(new Date(d + "T00:00"));
-          out.innerHTML = `<span class="label">Guardar por mês</span><b class="num">${brl(v / n)}</b><span>${brl(v)} ÷ ${n} ${n === 1 ? "mês" : "meses"}${t && t.guardado > 0 ? ", sem contar o que já está guardado" : ""}</span>`;
+          // mesma conta da lista "Para onde vai a caixinha": o valor de hoje corrigido pela inflação até a data
+          const anos = Math.max(0, (new Date(d + "T00:00") - Date.now()) / (365.25 * 864e5));
+          const vf = Math.round(v * INFLACAO_ANO ** anos * 100) / 100;
+          out.innerHTML = `<span class="label">Guardar por mês</span><b class="num">${brl(vf / n)}</b><span>${brl(vf)} ÷ ${n} ${n === 1 ? "mês" : "meses"}${vf - v >= 1 ? " (com inflação)" : ""}${t && t.guardado > 0 ? ", sem contar o que já está guardado" : ""}</span>`;
         } else out.innerHTML = `<span>Escolha o valor e quando vai precisar.</span>`;
       };
       b.querySelectorAll("[data-mq]").forEach((el) => el.onclick = () => { const d = new Date(); d.setMonth(d.getMonth() + Number(el.dataset.mq)); b.querySelector("#mD").value = dStr(d); upd(); });
@@ -3510,8 +3560,8 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   function renderResumo() {
     const months = [-5, -4, -3, -2, -1, 0].map((n) => ymShift(S.ym, n));
     const data = months.map((ym) => ({ ym, ...stats(ym) }));
-    // meses antes do primeiro lançamento não entram no gráfico (ficam pelo menos 3 colunas)
-    while (data.length > 3 && !data[0].ganhos && !data[0].gastos) data.shift();
+    // meses antes do primeiro lançamento não entram no gráfico
+    while (data.length > 1 && !data[0].ganhos && !data[0].gastos) data.shift();
     const max = niceMax(Math.max(100, ...data.flatMap((d) => [d.ganhos, d.gastos])));
     const W = 340, H = 190, pL = 44, pR = 6, pT = 10, pB = 24, pw = W - pL - pR, ph = H - pT - pB;
     const y = (v) => pT + ph - (v / max) * ph;
@@ -3539,7 +3589,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     const ganhosCat = porCat("ganho"), gastosCat = porCat("gasto");
     $("#tab-resumo").innerHTML = `
       <h1 class="ptitulo">Resumo</h1>
-      ${comDados.length ? `<div class="card"><div class="sec-h"><h2>Últimos 6 meses</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
+      ${comDados.length ? `<div class="card"><div class="sec-h"><h2>${data.length >= 6 ? "Últimos 6 meses" : data.length === 1 ? MES[Number(data[0].ym.slice(5)) - 1][0].toUpperCase() + MES[Number(data[0].ym.slice(5)) - 1].slice(1) : "Desde " + MES[Number(data[0].ym.slice(5)) - 1]}</h2><div class="legend"><span><i style="background:var(--ganho)"></i>Ganhos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div></div>${svg}
         <div class="tbl-wrap"><table><thead><tr><th>Mês</th><th>Lucro</th></tr></thead><tbody>
         ${comDados.slice().reverse().map((d) => `<tr><td>${MES_AB[Number(d.ym.slice(5)) - 1]}/${d.ym.slice(2, 4)}</td><td class="val ${d.saldo >= 0 ? "g" : "x"}">${brl(d.saldo)}</td></tr>`).join("")}
         </tbody></table></div></div>` : `<div class="empty"><b>Nada anotado nos últimos 6 meses</b><span>Quando você lançar ganhos e gastos, o resumo aparece aqui.</span></div>`}
@@ -3621,6 +3671,9 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 21, data: "2026-11-22", itens: [
+      "Contas da caixinha iguais no Início e no Carro; manutenção com prazo de cada serviço; celular pequeno sem nada cortado.",
+    ] },
     { v: 20, data: "2026-11-22", itens: [
       "Início, Carro e Histórico com menos texto: um número só do que falta separar, previsão do mês mais clara e filtros inteiros no Histórico.",
       "Primeiro uso começa com um botão só, para lançar o primeiro ganho.",
@@ -4222,7 +4275,7 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     const ult = Number(S.settings.ultimoBackup) || 0;
     const dias = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
     if (dias != null && dias < 7) return null;
-    return { nome: "Cópia de segurança", txt: dias == null ? "Nenhuma cópia ainda" : "Última há " + dias + " dias", st: "breve", lbl: temGoogle() ? "Salvar no Google" : "Salvar", tab: "resumo" };
+    return { nome: "Cópia de segurança", txt: dias == null ? "Nenhuma cópia ainda" : "Última há " + dias + " dias", st: "breve", lbl: "Salvar cópia", tab: "resumo" };
   }
   function dadosCopia() {
     const colecoes = {};
