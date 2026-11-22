@@ -30,6 +30,9 @@ jobs:
     name: Preços da ANP
     if: ${{ github.event_name != 'pull_request' }} # numa proposta, usa os preços que já estão no repositório
     runs-on: ubuntu-latest
+    # o site da ANP às vezes recusa a conexão do GitHub: aí o app sai com os preços da semana anterior,
+    # sem marcar a publicação como falha (a data da semana aparece no app)
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

@@ -37,7 +37,7 @@ async function abrir(page, loja = { [BASE]: { ...JA_VIU } }) {
     }, [CHAVE, JSON.stringify(loja)]);
   }
   await page.goto("./");
-  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await expect(page.locator("#tab-inicio .lucro, #inicioVazio")).not.toHaveText("…");
 }
 const dBRcurto = (d) => d.slice(8, 10) + "/" + d.slice(5, 7); // "2026-10-25" vira "25/10", como o app mostra
 const aba = (page, nome) => page.locator(`.tab[data-tab="${nome}"]`).click();
@@ -193,7 +193,7 @@ test("no iPhone, pelo Safari, avisa para instalar antes de anotar", async ({ pag
   await page.click("#iosOk");
   await expect(page.locator("#iosInst")).toBeHidden();
   await page.reload();
-  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await expect(page.locator("#tab-inicio .lucro, #inicioVazio")).not.toHaveText("…");
   await expect(page.locator("#iosInst")).toBeHidden();
 });
 
@@ -217,7 +217,7 @@ test("consumo por litro e qual combustível colocar", async ({ page }) => {
 });
 
 test("caixinha: pneus de R$ 1.000 daqui a 2 anos, com 5% de inflação ao ano = R$ 45,94 por mês, e separar mais não conta duas vezes", async ({ page }) => {
-  await abrir(page, dados({ manutencao: [{ servico: "Troca de pneus", custo: 1000, proxData: emMeses(24), cadaKm: 40000, cadaMeses: 60 }] }));
+  await abrir(page, dados({ manutencao: [{ servico: "Troca de pneus", custo: 1000, proxData: emMeses(24), cadaKm: 40000, cadaMeses: 60 }], lancamentos: [{ data: dia(0), tipo: "gasto", cat: "Alimentação", valor: 10, ts: 1 }] })); // um gasto hoje: sem nada anotado, o Início mostra só o primeiro passo
   await aba(page, "carro");
   await parte(page, "custos");
   const pneus = page.locator(".meta-row", { hasText: "Troca de pneus" }); // a linha dos pneus, não o texto de exemplo
@@ -355,7 +355,7 @@ test("cópia de segurança: salva e restaura em outro celular", async ({ page },
   await page.evaluate((k) => localStorage.removeItem(k), CHAVE);
   await page.reload();
   await page.click("#tutPular");
-  await expect(page.locator(".lucro")).toContainText("0,00");
+  await expect(page.locator("#inicioVazio")).toBeVisible();
   await aba(page, "resumo");
   await page.click("#bkLoad");
   // arquivo passado em memória: o caminho da pasta do teste tem acento
@@ -499,7 +499,7 @@ test("primeira vez: tutorial; depois, as novidades que ficaram para trás aparec
   await expect(page.locator("#sheet")).toBeHidden();
   // quem acabou de chegar não vê as novidades antigas, nem o tutorial de novo
   await page.reload();
-  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await expect(page.locator("#tab-inicio .lucro, #inicioVazio")).not.toHaveText("…");
   await page.waitForTimeout(300);
   await expect(page.locator("#sheet")).toBeHidden();
   // no Resumo dá para rever
@@ -520,7 +520,7 @@ test("quem já usava e ficou sem abrir vê as novidades uma vez, sem o tutorial"
   await expect(page.locator("#tutTit")).toHaveCount(0);
   await page.click("#novOk");
   await page.reload();
-  await expect(page.locator("#tab-inicio .lucro")).not.toHaveText("…");
+  await expect(page.locator("#tab-inicio .lucro, #inicioVazio")).not.toHaveText("…");
   await page.waitForTimeout(300);
   await expect(page.locator("#sheet")).toBeHidden();
 });
@@ -686,7 +686,6 @@ test("tanque misturado não dá ao etanol a média da gasolina", async ({ page }
   await aba(page, "carro");
   await parte(page, "consumo");
   const m = page.locator("#tab-carro .metrics");
-  await expect(m).toContainText("confiança baixa"); // três tanques e um deles bem fora: ainda não dá para cravar
   const v = async (c) => Number((await m.locator("div", { hasText: "Média com " + c }).locator(".v").innerText()).split(" ")[0].replace(",", "."));
   expect(await v("etanol")).toBeLessThan(await v("gasolina"));
 });
@@ -763,8 +762,7 @@ test("tanques misturados: as duas médias saem da conta com a porcentagem de cad
   const m = page.locator("#tab-carro .metrics");
   await expect(m.locator("div", { hasText: "Média com gasolina" })).toContainText("12,0");
   await expect(m.locator("div", { hasText: "Média com etanol" })).toContainText("8,4");
-  await expect(m).toContainText("confiança");
-  await expect(m).not.toContainText("confiança baixa");
+  await expect(m).not.toContainText("confiança"); // só os números
 });
 
 test("tanque marcado como cheio que não encheu: o app junta com o seguinte e avisa a data", async ({ page }) => {
@@ -1143,7 +1141,7 @@ test("o que já estava no tanque antes do primeiro registro é estimado pelo con
   }
   await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }));
   const card = page.locator(".card", { hasText: "Mistura atual do tanque" });
-  await expect(card).toContainText("estimado pelo consumo");
+  await expect(card).toContainText("Etanol");
   // de verdade: etanol = tq.E de 50 L
   const pe = Math.round((tq.E / 50) * 100);
   const txt = await card.innerText();
@@ -1261,8 +1259,8 @@ test("Resumo mostra o melhor e o pior dia da semana pelos ganhos", async ({ page
   await abrir(page, dados({ lancamentos: L }));
   await aba(page, "resumo");
   const c = page.locator("#tab-resumo .card", { hasText: "Dias da semana" });
-  await expect(c).toContainText("Sábado rende mais: R$ 300,00");
-  await expect(c).toContainText("Segunda rende menos: R$ 180,00");
+  await expect(c.locator(".bar-row", { hasText: "Sábado" })).toContainText("R$ 300,00");
+  await expect(c.locator(".bar-row", { hasText: "Segunda" })).toContainText("R$ 180,00");
 });
 
 test("avisa quando o combustível mais barato por km muda", async ({ page }) => {
@@ -1354,7 +1352,7 @@ test("lançamento novo mostra as categorias mais usadas, os postos de costume e 
   await expect(page.locator("#fPosto")).toHaveValue("Shell Centro");
   await page.click("#fCancel");
   await aba(page, "historico");
-  await expect(page.locator(".item", { hasText: "Combustível" })).toContainText("Etanol · Shell Centro · 30,0 L · R$ 4,00/L");
+  await expect(page.locator(".item", { hasText: "Combustível" })).toContainText("Etanol · Shell Centro · R$ 4,00/L");
 });
 
 test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", async ({ page }) => {
@@ -1364,7 +1362,7 @@ test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", as
   const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
   // 5 dias × 40 km = 200 km = 20 L: sobram 30 L de 50 (vazio 40%)
   await expect(tq).toContainText(/Vazio\s*40%\s*20,0 L/i);
-  await expect(tq).toContainText("uns 200 km rodados (5 dias pelo seu ritmo)");
+  await expect(tq).toContainText("−~200 km");
   // sobram 30 L a 10 km/l = 300 km; a 40 km por dia dá 7 dias e meio
   await expect(tq.locator("#autonomia")).toHaveText("~7 dias · 300 km");
 });

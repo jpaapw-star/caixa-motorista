@@ -481,7 +481,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
 :root[data-theme="dark"] .tab { color: var(--muted); }
 .tab[aria-current="page"] { color: var(--faixa); }
 .metrics > .comb-prev ~ div:last-child:nth-child(even) { grid-column: 1 / -1; }
-.histf { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; }
+.histf { display: flex; gap: 7px; flex-wrap: wrap; }
 .histf .chip { flex: none; }
 .mes-tot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--muted); padding: 0 2px; }
 .mes-tot b { color: var(--ink); font-weight: 600; }
@@ -513,7 +513,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
 
 <main class="wrap">
   <div id="offline" class="banner" hidden>Para salvar seus dados, abra esta página no Claude com a sua conta.</div>
-  <div id="iosInst" class="banner" hidden><b>Instale antes de começar a anotar.</b> No iPhone, o que você anota aqui no Safari não passa para o app instalado, e o Safari pode apagar os dados se ficar 7 dias sem abrir. Toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. <br><button type="button" class="btn ghost sm" id="iosOk" style="margin-top:8px">Entendi</button></div>
+  <div id="iosInst" class="banner" hidden><b>Instale antes de anotar:</b> Compartilhar › Adicionar à Tela de Início.<br><button type="button" class="btn ghost sm" id="iosOk" style="margin-top:8px">Entendi</button></div>
   <section id="tab-inicio" class="wrap"></section>
   <section id="tab-historico" class="wrap" hidden></section>
   <section id="tab-carro" class="wrap" hidden></section>
@@ -1178,7 +1178,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     const vazio = Math.max(0, t.T - t.litros), pv = Math.round((vazio / t.T) * 100);
     const pg = Math.round((G / t.T) * 100), pe = Math.max(0, 100 - pv - pg - Math.round((O / t.T) * 100));
     const baixa = t.conf === "baixa";
-    const quando = `${t.origem === "tanque cheio" ? "Tanque cheio" : t.origem === "abastecimento" ? "Abastecimento" : "Gasto pelos km"} em ${dBR(t.data).slice(0, 5)}${t.rodou > 0 ? `, menos ${t.diasEst > 0 ? "uns " : ""}${num(t.rodou)} km rodados${t.diasEst > 0 ? " (" + t.diasEst + (t.diasEst === 1 ? " dia" : " dias") + " pelo seu ritmo)" : ""}` : ""}`;
+    const quando = `${t.origem === "tanque cheio" ? "Tanque cheio" : t.origem === "abastecimento" ? "Abastecimento" : "Gasto pelos km"} ${dBR(t.data).slice(0, 5)}${t.rodou > 0 ? ` · −${t.diasEst > 0 ? "~" : ""}${num(t.rodou)} km` : ""}`;
     return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
       <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%, vazio ${pv}% do tanque"><i class="g" style="width:${(G / t.T) * 100}%"></i><i class="e" style="width:${(E / t.T) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / t.T) * 100}%"></i>` : ""}</div>
       <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:center"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span><span style="text-align:right"><span class="label">Vazio</span><br><b class="num">${pv}%</b> <small>${num(vazio, 1)} L</small></span></div>
@@ -1188,8 +1188,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
       <small class="num" style="color:var(--muted)">${quando}</small>
       ${t.acerto ? `<small class="num" style="color:var(--muted)">${esc(t.acerto)}.</small>` : ""}
       <small class="num" style="color:var(--muted)">Confiança: ${esc(t.conf)}</small>
-      ${t.conf !== "alta" ? (t.motivos.length ? t.motivos : baixa ? ["poucos dados"] : []).map((m) => `<small style="color:var(--muted)">· ${esc(m)}</small>`).join("") : ""}
-      ${t.conf !== "alta" && t.dicas.length ? t.dicas.map((m) => `<small style="color:var(--muted)">· ${esc(m)}</small>`).join("") : ""}
+      ${t.conf !== "alta" && t.dicas.length ? `<small style="color:var(--muted)">· ${esc(t.dicas[0])}</small>` : ""}
       </div></details>
       ${ecTxt}
     </div>`;
@@ -1256,7 +1255,6 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     const ord = ds.slice().sort((a, b) => b.m - a.m), mel = ord[0], pio = ord[ord.length - 1], top = mel.m;
     if (!(mel.m >= pio.m * 1.1)) return ""; // dias parecidos: nada a dizer
     return `<div class="card"><div class="sec-h"><h2>Dias da semana</h2></div>
-      <p class="note" style="margin:0"><b style="color:var(--ink)">${DSEM[mel.i]} rende mais: ${brl(mel.m)}</b> por dia trabalhado. ${DSEM[pio.i]} rende menos: ${brl(pio.m)}. Últimas 12 semanas.</p>
       <div class="bars">${ds.map((x) => `<div class="bar-row"><span>${DSEM[x.i]}</span><span class="num">${brl(x.m)}</span><div class="track"><i style="width:${(x.m / top) * 100}%;background:${x === mel ? "var(--ganho)" : "var(--muted)"}"></i></div></div>`).join("")}</div></div>`;
   }
   function renderInicio() {
@@ -1303,7 +1301,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
       const { de, para, dd } = sus[sus.length - 1];
       const src = para.src || {};
       alertas.unshift({ nome: `KM ${num(para.k)} parece errado` + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
-        txt: `${dBR(de.d).slice(0, 5)}: ${num(de.k)} km → ${dBR(para.d).slice(0, 5)}: ${num(para.k)} km${para.k < de.k ? " (voltou)" : ` (${num(para.k - de.k)} km em ${dd < 1 ? "1 dia" : num(dd) + (dd === 1 ? " dia" : " dias")})`} · ${src.onde || "nos seus registros"}` });
+        txt: `${num(de.k)} → ${num(para.k)} km${para.k < de.k ? " (voltou)" : ` em ${dd < 1 ? "1 dia" : num(dd) + (dd === 1 ? " dia" : " dias")}`} · ${src.onde || "nos seus registros"}` });
     });
     const { lucroDia } = s;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
@@ -1330,6 +1328,12 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     const temGanho = S.lanc.some((x) => x.tipo === "ganho");
     const resumoTrab = s.dias ? `<small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"}${s.corridas ? " · " + num(s.corridas) + " corridas" : ""}</small>` : "";
 
+    // primeiro uso: nada anotado ainda, então nada de R$ 0,00, meta ou "em dia": só o primeiro passo
+    if (!loading && !S.lanc.length && !S.dias.length && !S.seps.length) {
+      $("#tab-inicio").innerHTML = `<div class="empty" id="inicioVazio"><b>Comece pelo ganho de hoje</b><button class="btn primary largo" id="primGanho"${S.offline ? " disabled" : ""}>Lançar o primeiro ganho</button></div>
+        ${alertas.length ? `<div class="alerts">${alertas.slice(0, 1).map(alertaBtn).join("")}</div>` : ""}`;
+      return;
+    }
     $("#tab-inicio").innerHTML = `
       <div class="placa"><div class="placa-in">
         <div class="placa-top"><span class="label">Lucro em ${mes}</span></div>
@@ -1373,7 +1377,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         <p class="note" style="margin:0">${statusDia(rc)}</p>
         <div class="meta-row" style="padding:0;border:0"><div class="split"><small>Separado em ${MES[new Date().getMonth()]}: ${brl(rc.cx.sepMes)}</small><small>meta ${brl(rc.metaMes)}</small></div><div class="track"><i style="width:${rc.metaMes > 0 ? Math.min(100, rc.cx.sepMes / rc.metaMes * 100) : 0}%"></i></div></div>`
         : `<p class="note" style="margin:0">Cadastre os custos do carro para saber quanto separar por dia.</p>`}
-        ${cx.entradas || cx.saidas ? `<div class="split" style="border-top:1px solid var(--line);padding-top:8px"><span>${cx.saldo < -0.005 ? "Faltando na caixinha" : "Na caixinha"}</span><b class="num">${brl(Math.abs(cx.saldo))}</b></div>` : ""}
+        ${cx.saldo > 0.005 ? `<div class="split" style="border-top:1px solid var(--line);padding-top:8px"><span>Na caixinha</span><b class="num">${brl(cx.saldo)}</b></div>` : ""}
         ${pv.proximo ? `<p class="note" style="margin:0">Próximo gasto: ${esc(pv.proximo.nome)} em ${mesAno(pv.proximo.data)}, ${brl(pv.proximo.valor)}.</p>` : ""}
         ${rc.D > 0 || temGanho || S.seps.length ? `<div class="btn-row"><button class="btn primary largo" id="addSep"${S.offline ? " disabled" : ""}>Separei dinheiro</button></div>` : ""}
       </div>
@@ -1411,7 +1415,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
       }).join("");
       html += `<div class="day">
         <div class="day-h"><div><b>${esc(wd)}</b><div class="meta">${meta}</div></div><span class="val ${g - x >= 0 ? "g" : "x"}">${brl(g - x)}</span></div>
-        ${L.map((it) => `<button class="item" data-lanc="${esc(it.id)}"><div><b>${esc(it.cat)}</b>${(() => { const sub = [it.cat === "Combustível" ? it.comb : "", it.posto, it.desc, it.litros ? num(it.litros, 1) + " " + unidade(it.comb) : "", it.cat === "Combustível" && it.litros > 0 ? brl(it.valor / it.litros) + "/" + unidade(it.comb) : ""].filter(Boolean).join(" · "); return sub ? `<span>${esc(sub)}</span>` : ""; })()}</div><span class="val ${it.tipo === "ganho" ? "g" : "x"}">${it.tipo === "ganho" ? "+" : "−"} ${brl(it.valor)}</span></button>`).join("")}
+        ${L.map((it) => `<button class="item" data-lanc="${esc(it.id)}"><div><b>${esc(it.cat)}</b>${(() => { const sub = [it.cat === "Combustível" ? it.comb : "", it.posto, it.desc, it.litros && it.cat !== "Combustível" ? num(it.litros, 1) + " " + unidade(it.comb) : "", it.cat === "Combustível" && it.litros > 0 ? brl(it.valor / it.litros) + "/" + unidade(it.comb) : ""].filter(Boolean).join(" · "); return sub ? `<span>${esc(sub)}</span>` : ""; })()}</div><span class="val ${it.tipo === "ganho" ? "g" : "x"}">${it.tipo === "ganho" ? "+" : "−"} ${brl(it.valor)}</span></button>`).join("")}
       </div>`;
     }
     $("#tab-historico").innerHTML = html;
@@ -2483,7 +2487,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   // linhas do quadro "Previsão do mês": faixa, parte de cada combustível, próximo abastecimento e a correção pelo histórico
   function dicaPrev(pc, cm) {
     const linhas = [];
-    if (pc.faixa) linhas.push("entre " + brl(pc.faixa[0]) + " e " + brl(pc.faixa[1]));
+    if (pc.faixa) linhas.push(pc.faixa[0] - (pc.gasto || 0) < 1 ? "até " + brl(pc.faixa[1]) : "entre " + brl(pc.faixa[0]) + " e " + brl(pc.faixa[1]));
     if (Object.keys(pc.porComb).length > 1) linhas.push(Object.entries(pc.porComb).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + " " + brl((cm[c] || 0) + v)).join(" · "));
     if (pc.porAbast) linhas.push(pc.abast.length ? "abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "sem abastecer até o fim do mês");
     else if (!linhas.length) linhas.push("gasto até hoje + " + brl(pc.combDia) + " por dia");
@@ -2543,7 +2547,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     if (tarde > 0) faixa = [Math.max(gastoMes, Math.min(faixa ? faixa[0] : valor, valor - tarde)), faixa ? faixa[1] : valor];
     // cada combustível com sua parte do que falta
     const fat = futuro > 0 ? (valor - gastoMes) / futuro : 0;
-    return { valor, faixa, dr, porComb: Object.fromEntries(Object.entries(cd.porComb).map(([c, v]) => [c, v * dr * fat])), combDia: cd.combDia,
+    return { valor, faixa, gasto: gastoMes, dr, porComb: Object.fromEntries(Object.entries(cd.porComb).map(([c, v]) => [c, v * dr * fat])), combDia: cd.combDia,
       tanque: ajuste, bruto: Math.max(0, bruto), k: k0, cal: cal.k, epoca: fpPeso > 0 ? epSoma / fpPeso : 1, feriado: drSemFer > 0 ? dr / drSemFer : 1, meses: cal.n, ganhos: fg, preco: fpPeso > 0 ? fpSoma / fpPeso : 1, abast, porAbast };
   }
   function custoDiario() {
@@ -2615,7 +2619,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     }
     let txt = cx.sepHoje > 0 ? `Já separou ${brl(cx.sepHoje)} hoje. ` : "";
     if (rc.adiant > D * 0.05) txt += `${brl(rc.adiant)} adiantado no mês.`;
-    else if (rc.adiant < -D * 0.05) txt += `${brl(-rc.adiant)} atrasado no mês.`;
+    else if (rc.adiant < -D * 0.05) txt += `Faltam ${brl(-rc.adiant)} no mês.`;
     else txt += "Em dia com o mês.";
     return txt;
   }
@@ -2655,8 +2659,8 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
     const sub = S.carroSub;
     const dash = "<small>—</small>";
     const off = S.offline ? " disabled" : "";
-    const digits = String(Math.round(km)).padStart(6, "0").split("");
-    const info = [car.ano, car.combustivel, car.tanque ? "tanque de " + num(car.tanque, car.tanque % 1 ? 1 : 0) + " L" : ""].filter(Boolean).map(esc).join(" · ");
+    const digits = String(Math.round(km)).split("");
+    const info = [car.ano, car.combustivel, car.tanque ? num(car.tanque, car.tanque % 1 ? 1 : 0) + " L" : ""].filter(Boolean).map(esc).join(" · ");
     const kmHTML = `<div class="odo-in">${km > 0 ? `<div class="digits num" aria-label="${num(km)} km">${digits.map((d) => `<span>${d}</span>`).join("")}<em>km</em></div>` : `<span class="car-info">Anote o KM no próximo posto</span>`}
         <button class="btn sm ghost" id="setKm"${off}>Atualizar KM</button></div>
         ${rk ? `<p class="note odo-ritmo"><b class="num">${num(rk.kmDia)} km</b> por dia</p>` : ""}`;
@@ -2700,7 +2704,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
           // em pares: as médias lado a lado, depois último tanque e preço por km (preço do litro fica na calculadora e nos postos)
           const t = [
             ...(Object.keys(fd.kmlPor).length > 1
-              ? Object.entries(fd.kmlPor).map(([c, v]) => ["Média com " + c.toLowerCase(), num(v, 1) + ` <small>${unidKm(c)}</small>${fd.kmlConf[c] ? `<br><small>confiança ${fd.kmlConf[c]}</small>` : ""}`])
+              ? Object.entries(fd.kmlPor).map(([c, v]) => ["Média com " + c.toLowerCase(), num(v, 1) + ` <small>${unidKm(c)}</small>`])
               : [fd.media ? ["Média por litro", num(fd.media, 1) + " <small>km/L</small>"] : null]),
             fd.trechos.length > 1 ? ["Último tanque", num(fd.ultimo, 1) + " <small>km/L</small>"] : null,
             custoComb ? ["Preço por km", brl(custoComb)] : null,
@@ -2729,7 +2733,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
             mostraConf ? "Encha até o bico desligar para a média firmar." : "",
           ].filter(Boolean);
           const pedeTanque = fd.semTanque && (fs || Object.keys(fd.kmlConf).length > 1);
-          return (txt.length ? `<details class="mais"><summary>Por que a média ainda é aproximada</summary><div><p class="note" style="margin:0">${txt.join(" ")}</p></div></details>` : "") +
+          return (txt.length ? `<details class="mais"><summary>Detalhes</summary><div><p class="note" style="margin:0">${txt.join(" ")}</p></div></details>` : "") +
             (pedeTanque ? `<button class="alert breve" id="pedeTanque"><div><b>Tamanho do tanque</b><span>Informe quantos litros cabem no tanque para o app separar gasolina e etanol com mais precisão.</span></div><span class="pill breve">Informar</span></button>` : "");
         })()}
         ${fd.trechos.length
@@ -2760,7 +2764,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
           <div class="split"><span>Separado para os carros</span><b class="num">${brl(cx.entradas)}</b></div>
           <div class="split"><span>Gasto com os carros</span><b class="num">− ${brl(cx.saidas)}</b></div>
           <div class="split" style="border-top:1px solid var(--line);padding-top:8px"><b>${cx.saldo < -0.005 ? "Faltando" : "Saldo"}</b><b class="num">${brl(Math.abs(cx.saldo))}</b></div>
-          ${S.seps.length ? `<div><span class="label">Separado à parte</span><div class="mlist" style="margin-top:6px">${S.seps.slice().sort(byDataTs).reverse().slice(0, 6).map((x) => `<button class="frow" data-sep="${esc(x.id)}"><div class="fi"><b>${dBR(x.data)}</b><span>${esc(x.nota || "")}</span></div><span></span><span class="val g">${brl(x.valor)}</span></button>`).join("")}</div></div>` : ""}
+          ${S.seps.length ? `<div><span class="label">Separado à parte</span><div class="mlist" style="margin-top:6px">${S.seps.slice().sort(byDataTs).reverse().slice(0, 6).map((x) => `<button class="frow" data-sep="${esc(x.id)}"><div class="fi"><b>${dBR(x.data).slice(0, 5)}</b><span>${esc(x.nota || "")}</span></div><span></span><span class="val">${brl(x.valor)}</span></button>`).join("")}</div></div>` : ""}
         </div>
         ${pv.metas.length ? `<div class="card"><div class="sec-h"><h2>Para onde vai a caixinha</h2></div>
           ${pv.metas.length ? `<div class="mlist">${pv.metas.map((t) => `<button class="meta-row" ${t.tipo === "manut" ? `data-meta="${esc(t.id)}"` : `data-metafixo="1"`}>
@@ -2782,7 +2786,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         ${lista.length ? `<div class="mlist">${lista.map(({ m, r, e }) => `
           <div class="mrow">
             <button class="info" data-serv="${esc(m.id)}"><b>${esc(m.servico)}</b><span>${r.st === "none" ? "Toque em Feito hoje quando fizer" : (mResumo(r) || "Próxima: " + [r.prox ? num(r.prox) + " km" : "", r.proxData ? dBR(dStr(r.proxData)) : ""].filter(Boolean).join(" ou "))}</span>${e.aprendeuMeses || e.aprendeuKm ? `<small>Seu ritmo: a cada ${[e.aprendeuKm ? "~" + num(e.cadaKm) + " km" : "", e.aprendeuMeses ? "~" + num(e.cadaMeses, e.cadaMeses % 1 ? 1 : 0) + " meses" : ""].filter(Boolean).join(" ou ")}</small>` : ""}</button>
-            <div class="side"><span class="pill ${r.st}">${ST_LBL[r.st]}</span><button class="btn sm ghost" data-feito="${esc(m.id)}">Feito hoje</button></div>
+            <div class="side">${r.st === "venc" || r.st === "breve" ? `<span class="pill ${r.st}">${ST_LBL[r.st]}</span>` : ""}<button class="btn sm ghost" data-feito="${esc(m.id)}">Feito hoje</button></div>
           </div>`).join("")}</div>` : `<div class="empty"><b>Nenhum serviço cadastrado</b><span>Adicione troca de óleo, pneus, revisão… e o app avisa quando estiver chegando a hora.</span></div>`}
         <div class="sec-h"><h2>Histórico do carro</h2><div class="btn-row"><button class="btn sm ghost" id="addHist"${off}>+ Registro</button>${S.downloads && hist.length ? `<button class="btn sm ghost" id="pdfHist">Baixar PDF</button>` : ""}</div></div>
         ${hist.length ? `<div class="mlist">${hist.map((h) => `<button class="frow" data-hist="${esc(h.id)}">
@@ -3408,7 +3412,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         ${escondidos()}${placaHTML()}`;
     };
     openForm(() => `
-      <div><h2>${novo ? "Novo carro" : "Dados do carro"}</h2><p class="note">${novo ? "O carro novo já vem com a lista de manutenção padrão. Você troca de carro tocando no nome dele, na aba Carro." : "Esses dados aparecem na aba Carro e ajudam nas contas de consumo."}</p></div>
+      <div><h2>${novo ? "Novo carro" : "Dados do carro"}</h2></div>
       ${carroHTML()}
       <div class="fld"><span>Combustível</span><div class="chips">${TIPOS_CARRO.map((x) => `<button type="button" class="chip" data-cc="${x}" aria-pressed="${F.combustivel === x}">${x}</button>`).join("")}</div></div>
       <label class="fld"><span>Tamanho do tanque (litros)</span><input id="cT" inputmode="decimal" placeholder="Ex.: 44" value="${esc(F.tanqueTxt || "")}"></label>
@@ -3506,10 +3510,12 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   function renderResumo() {
     const months = [-5, -4, -3, -2, -1, 0].map((n) => ymShift(S.ym, n));
     const data = months.map((ym) => ({ ym, ...stats(ym) }));
+    // meses antes do primeiro lançamento não entram no gráfico (ficam pelo menos 3 colunas)
+    while (data.length > 3 && !data[0].ganhos && !data[0].gastos) data.shift();
     const max = niceMax(Math.max(100, ...data.flatMap((d) => [d.ganhos, d.gastos])));
     const W = 340, H = 190, pL = 44, pR = 6, pT = 10, pB = 24, pw = W - pL - pR, ph = H - pT - pB;
     const y = (v) => pT + ph - (v / max) * ph;
-    const gw = pw / 6, bw = Math.min(16, gw * 0.3);
+    const gw = pw / data.length, bw = Math.min(16, gw * 0.3);
     let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Ganhos e gastos nos últimos 6 meses">`;
     [0, 0.5, 1].forEach((f) => { const v = max * f; svg += `<line class="grid" x1="${pL}" x2="${W - pR}" y1="${y(v)}" y2="${y(v)}"/><text x="${pL - 6}" y="${y(v) + 4}" text-anchor="end">${shortBRL(v).replace("R$ ", "")}</text>`; });
     data.forEach((d, i) => {
@@ -3615,6 +3621,11 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 20, data: "2026-11-22", itens: [
+      "Início, Carro e Histórico com menos texto: um número só do que falta separar, previsão do mês mais clara e filtros inteiros no Histórico.",
+      "Primeiro uso começa com um botão só, para lançar o primeiro ganho.",
+      "Hodômetro sem zero na frente, manutenção só marca o que está perto de vencer e o gráfico do Resumo começa no seu primeiro mês.",
+    ] },
     { v: 19, data: "2026-11-21", itens: [
       "Botões e letras maiores, mais fáceis de tocar e de ler.",
       "Tanque em % do tanque inteiro: gasolina, etanol e vazio somam 100%.",
@@ -3734,7 +3745,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
       const p = TUTORIAL[i], fim = i === TUTORIAL.length - 1;
       return `
       <div><small class="note" style="margin:0">${i + 1} de ${TUTORIAL.length}</small><h2 id="tutTit">${esc(p.t)}</h2><p class="note">${esc(p.txt)}</p></div>
-      ${fim ? `<button type="button" class="btn ghost" id="tutRest">Já usava em outro celular? Restaurar cópia</button>` : ""}
+      ${fim ? `<button type="button" class="btn ghost" id="tutRest">Tenho uma cópia</button>` : ""}
       <div class="sh-actions">${fim ? "" : `<button type="button" class="btn ghost" id="tutPular">Pular</button>`}<span class="spacer"></span>
         ${i ? `<button type="button" class="btn ghost" id="tutVolta">Voltar</button>` : ""}<button type="button" class="btn primary" id="tutProx">${fim ? "Começar" : "Próximo"}</button></div>`;
     }, (draw, b) => {
@@ -3747,8 +3758,8 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
   function novidadesForm(lista, titulo = "Novidades do RLCAR") {
     let tudo = false;
     openForm(() => `
-      <div><h2 id="novTit">${esc(titulo)}</h2>${(tudo ? lista : lista.slice(0, 3)).map((n) => `<p class="note" style="margin:10px 0 4px"><b>${esc(dBR(n.data))}</b></p><ul class="note" style="margin:0;padding-left:20px">${n.itens.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`).join("")}</div>
-      <div class="sh-actions">${!tudo && lista.length > 3 ? `<button type="button" class="btn ghost" id="novTudo">Ver tudo</button>` : ""}<span class="spacer"></span><button type="button" class="btn primary" id="novOk">Entendi</button></div>`,
+      <div><h2 id="novTit">${esc(titulo)}</h2>${(tudo ? lista : lista.slice(0, 3)).map((n) => `<p class="note" style="margin:10px 0 4px"><b>${esc(dBR(n.data))}</b></p><ul class="note" style="margin:0;padding-left:20px">${(tudo ? n.itens : n.itens.slice(0, 1)).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`).join("")}</div>
+      <div class="sh-actions">${!tudo && (lista.length > 3 || lista.slice(0, 3).some((n) => n.itens.length > 1)) ? `<button type="button" class="btn ghost" id="novTudo">Ver tudo</button>` : ""}<span class="spacer"></span><button type="button" class="btn primary" id="novOk">Entendi</button></div>`,
     (draw, b) => { b.querySelector("#novOk").onclick = closeSheet; const vt = b.querySelector("#novTudo"); if (vt) vt.onclick = () => { tudo = true; draw(); }; });
   }
   // na primeira abertura: tutorial; depois: as novidades que o motorista ainda não viu, todas juntas
@@ -3846,7 +3857,7 @@ details > summary { min-height: 44px; display: flex; align-items: center; cursor
         ${F.tipo === "ganho" && catOf(F.cat) && catOf(F.cat).w ? (() => {
           const sug = sugestaoSep(F);
           const atual = F.id && F.sep != null ? F.sep : null;
-          return `<label class="fld"><span>Separar para o carro (R$)</span><input id="fSep" inputmode="decimal" placeholder="${esc(num(sug, 2))}" value="${esc(F.sepTxt != null ? F.sepTxt : atual != null ? num(atual, 2) : "")}">${!F.id && !(sug > 0.5) ? `<small class="note" style="margin:0">Hoje já está coberto</small>` : ""}</label>`;
+          return `<label class="fld"><span>Separar para o carro (R$)</span><input id="fSep" inputmode="decimal" value="${esc(F.sepTxt != null ? F.sepTxt : atual != null ? num(atual, 2) : "")}">${!F.id && !(sug > 0.5) ? `<small class="note" style="margin:0">Hoje já está coberto</small>` : ""}</label>${!F.id && sug > 0.5 ? `<div class="chips"><button type="button" class="chip" id="sepSug" data-v="${esc(num(sug, 2))}">Usar ${brl(sug)}</button></div>` : ""}`;
         })() : ""}
         ${F.extra ? `<label class="check"><input type="checkbox" id="fExtra"${F.extraOn ? " checked" : ""}><span>Salvar também no dia de trabalho: ${[F.extra.horas ? horasStr(F.extra.horas) : "", F.extra.corridas ? F.extra.corridas + " corridas" : "", F.extra.km ? num(F.extra.km) + " km com passageiro" : ""].filter(Boolean).join(", ")}</span></label>` : ""}
         <p class="err" id="fErr"></p>
@@ -4099,10 +4110,10 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
         <label class="fld"><span>KM na última vez</span><input id="sK" type="number" inputmode="numeric" value="${esc(F.ultKm || "")}"></label></div>
       <div class="row2"><label class="fld"><span>Repetir a cada (km)</span><input id="sCk" type="number" inputmode="numeric" placeholder="10000" value="${esc(F.cadaKm || "")}"></label>
         <label class="fld"><span>Ou a cada (meses)</span><input id="sCm" type="number" inputmode="numeric" placeholder="12" value="${esc(F.cadaMeses || "")}"></label></div>
-      ${feitoHoje ? "" : `<label class="fld"><span>Custo previsto (R$)</span><input id="sCusto" inputmode="decimal" placeholder="${(() => { const e = custoServico({ ...F, custo: 0 }); return e.v ? (e.fonte === "estimado" ? "Estimativa: " : "Média paga: ") + brl(e.v) : "0,00"; })()}" value="${F.custo ? esc(num(F.custo, 2)) : ""}"><small class="note" style="margin:0">Entra na previsão da caixinha. Em branco, o app usa o último valor pago ou uma estimativa.</small></label>`}
+      ${feitoHoje ? "" : `<label class="fld"><span>Custo previsto (R$)</span><input id="sCusto" inputmode="decimal" placeholder="${(() => { const e = custoServico({ ...F, custo: 0 }); return e.v ? (e.fonte === "estimado" ? "Estimativa: " : "Média paga: ") + brl(e.v) : "0,00"; })()}" value="${F.custo ? esc(num(F.custo, 2)) : ""}"></label>`}
       ${feitoHoje ? `<div class="row2"><label class="fld"><span>Valor pago (R$)</span><input id="sV" inputmode="decimal" placeholder="Opcional"></label>
         <label class="fld"><span>Oficina ou loja</span><input id="sL" placeholder="Opcional"></label></div>
-        <p class="hint" style="margin:0">Vai para o histórico do carro. Com valor, também entra como gasto de manutenção.</p>` : ""}
+        ` : ""}
       <p class="err" id="fErr"></p>
       <div class="sh-actions">${m && !feitoHoje ? `<button type="button" class="btn ghost danger" id="fDel">Excluir</button><span class="spacer"></span>` : ""}<button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>Salvar</button></div>
     `, (draw, b) => {
@@ -4279,8 +4290,8 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     let dados = null;
     openForm(() => `
       <div><h2>Restaurar cópia</h2><p class="note">Escolha a cópia que você salvou. O que está aqui agora é trocado por ela.</p></div>
-      ${temGoogle() ? `<button type="button" class="btn-print" id="gBusca">Buscar no meu Google Drive</button>` : ""}
-      <label class="btn-print" for="bkIn">Escolher arquivo</label>
+      ${temGoogle() ? `<button type="button" class="btn ghost largo" id="gBusca">Buscar no meu Google Drive</button>` : ""}
+      <label class="btn ghost largo" for="bkIn">Escolher arquivo</label>
       <input type="file" id="bkIn" accept=".json,.txt,application/json,text/plain" hidden>
       <p class="hint" id="bkMsg"></p>
       <p class="err" id="fErr"></p>
@@ -4393,6 +4404,8 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
       render(); window.scrollTo(0, 0); return;
     }
     if (t.id === "fab") { lancForm(); return; }
+    if (t.id === "primGanho") { lancForm({ tipo: "ganho" }); return; }
+    if (t.id === "sepSug") { const i = $("#fSep"); if (i) { i.value = t.dataset.v; i.dispatchEvent(new Event("input", { bubbles: true })); } return; }
     if (t.id === "prevM") { S.ym = ymShift(S.ym, -1); render(); return; }
     if (t.id === "nextM") { S.ym = ymShift(S.ym, 1); render(); return; }
     if (t.id === "jorIni") { jornadaIniForm(); return; }
