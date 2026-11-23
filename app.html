@@ -1223,7 +1223,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     return `<div class="card${baixa ? " tanque-baixa" : ""}">${head}
       <div class="mix-bar" role="img" aria-label="Gasolina ${pg}%, etanol ${pe}%, vazio ${pv}% do tanque"><i class="g" style="width:${(G / t.T) * 100}%"></i><i class="e" style="width:${(E / t.T) * 100}%"></i>${O > 0.05 ? `<i class="x" style="width:${(O / t.T) * 100}%"></i>` : ""}</div>
       <div class="mix-leg"><span><span class="label">Gasolina</span><br><b class="num">${pg}%</b> <small>${num(G, 1)} L</small></span><span style="text-align:center"><span class="label">Etanol</span><br><b class="num">${pe}%</b> <small>${num(E, 1)} L</small></span><span style="text-align:right"><span class="label">Vazio</span><br><b class="num">${pv}%</b> <small>${num(vazio, 1)} L</small></span></div>
-      ${t.autKm >= 1 ? `<div class="split"><span class="label">Dá para rodar</span><b class="num" id="autonomia">${t.autDias != null ? (t.autDias < 1 ? "menos de 1 dia" : "~" + Math.floor(t.autDias) + (Math.floor(t.autDias) === 1 ? " dia" : " dias")) + " · " : ""}${num(Math.round(t.autKm / 5) * 5)} km</b></div>` : ""}
+      ${t.autKm >= 1 ? `<div class="split"><span class="label">Até a reserva</span><b class="num" id="autonomia">${t.autDias != null ? (t.autDias < 0.75 ? "menos de 1 dia" : "~" + Math.max(1, Math.round(t.autDias)) + (Math.max(1, Math.round(t.autDias)) === 1 ? " dia" : " dias")) + " · " : ""}${num(Math.round(t.autKm / 5) * 5)} km</b></div>` : t.litros > 0 && t.litros <= RESERVA * t.T ? `<div class="split"><span class="label">Combustível</span><b class="num" id="autonomia">Na reserva</b></div>` : ""}
       <details class="mais"><summary>Detalhes</summary><div>
       ${G > 0.05 ? `<small class="num" style="color:var(--muted)">Álcool no tanque: ${Math.round(((E + G * ETANOL_NA_GASOLINA) / tot) * 100)}%</small>` : ""}
       <small class="num" style="color:var(--muted)">${quando}</small>
@@ -1312,8 +1312,6 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       ...S.manut.filter((mt) => carById(cid(mt))).map((mt) => { const r = mStatus(mt); return { nome: mt.servico + (variosCarros() ? " · " + nomeCarro(carById(cid(mt))) : ""), txt: mResumo(r), st: r.st, lbl: ST_LBL[r.st], sub: "manut", car: cid(mt) }; }),
       ...S.docs.filter((d) => docCar(d) === "pessoa" || carById(docCar(d))).map((d) => { const r = docStatus(d); return { nome: d.nome + (variosCarros() && docCar(d) !== "pessoa" ? " · " + nomeCarro(carById(docCar(d))) : ""), txt: r.txt, st: r.st, lbl: r.lbl, sub: "docs", car: docCar(d) === "pessoa" ? "" : docCar(d) }; }),
     ].filter((a) => a.st === "venc" || a.st === "breve").sort((a, b) => (a.st === "venc" ? 0 : 1) - (b.st === "venc" ? 0 : 1));
-    const bk = avisoBackup();
-    if (bk) alertas.push(bk);
     carros().forEach((c) => {
       // mais litros que o tanque: os litros ou o tamanho do tanque estão errados (a conta da mistura não passa do tanque)
       if (Number(c.tanque) > 0) {
@@ -1336,8 +1334,10 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
           txt: `Com os preços de agora, sai ${num(ec.dif * 100)}% mais barato por km que ${ec.outro.comb === "Gasolina" ? "a gasolina" : "o etanol"}. O etanol compensa até ${brl(ec.eqEta)} o litro.` });
       }
       const rq = rendimentoCaiu(c);
-      if (rq) alertas.push({ nome: "Rendimento caiu" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Ver", tab: "carro", sub: "consumo", car: c.id,
-        txt: `O tanque de ${dBR(rq.data).slice(0, 5)} fez ${num(rq.kml, 1)} km/L, ${num(rq.queda * 100)}% abaixo do normal (${num(rq.esp, 1)}). Confira a calibragem dos pneus${rq.posto ? " e o combustível do " + rq.posto : " e o combustível"}.` });
+      if (rq && rq.alta) alertas.unshift({ nome: "Rendimento alto demais" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Conferir", kmfix: JSON.stringify({ t: "lanc", id: rq.id }), car: c.id,
+        txt: `O tanque de ${dBR(rq.data).slice(0, 5)} fez ${num(rq.kml, 1)} km/L, ${num(rq.alta * 100)}% acima do normal (${num(rq.esp, 1)}). Confira o KM e se o tanque encheu até o bico desligar.` });
+      else if (rq) alertas.unshift({ nome: "Rendimento caiu" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: rq.queda >= 0.15 && !rq.um ? "venc" : "breve", lbl: "Ver", tab: "carro", sub: "consumo", car: c.id,
+        txt: `${rq.desde ? "Os 2 últimos tanques fizeram" : `O tanque de ${dBR(rq.data).slice(0, 5)} fez`} ${num(rq.kml, 1)} km/L, ${num(rq.queda * 100)}% abaixo do normal (${num(rq.esp, 1)}). ${rq.queda >= 0.15 && !rq.um ? "Calibre os pneus e, se não melhorar no próximo tanque, leve ao mecânico." : `Confira a calibragem dos pneus${rq.posto ? " e o combustível do " + rq.posto : " e o combustível"}.`}` });
       const sus = kmParaConferir(c.id);
       if (!sus.length) return;
       const { de, para, dd } = sus[sus.length - 1];
@@ -1345,6 +1345,9 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       alertas.unshift({ nome: `KM ${num(para.k)} parece errado` + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify(src),
         txt: (src.onde || "nos seus registros").replace(/^./, (c) => c.toUpperCase()) });
     });
+    // o aviso de cópia de segurança fica depois dos avisos do carro (rendimento, KM errado)
+    const bk = avisoBackup();
+    if (bk) alertas.push(bk);
     const { lucroDia } = s;
     const m = (v, fmt) => v == null ? '<small>—</small>' : fmt(v);
     // números extras do mês: só os que já têm valor (nada de quadro com "—")
@@ -1733,13 +1736,13 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     // Quanto o app acertou o vazio nos últimos tanques cheios (até 5). Errou para um lado de forma seguida
     // (gastou mais ou menos que as médias nos últimos tanques: ar-condicionado, trânsito, estação), o gasto
     // daqui para frente é corrigido pela razão entre o que entrou e o que ele previa, pesando mais os recentes.
-    // A correção fica entre −15% e +15% e só vale com 3 tanques conferidos ou mais.
+    // A correção fica entre −15% e +25% (carro com defeito chega a gastar 25% a mais) e só vale com 3 tanques conferidos ou mais.
     const ajusteVazio = (() => {
       const c = (all.confere || []).slice(-5);
       if (c.length < 3) return { n: c.length, fator: 1, erro: null };
       let sr = 0, sp = 0;
       c.forEach((x, i) => { const w = Math.pow(0.8, c.length - 1 - i); sr += w * x.real; sp += w * x.prev; });
-      let fator = sp > T * 0.3 ? Math.min(1.15, Math.max(0.85, sr / sp)) : 1;
+      let fator = sp > T * 0.3 ? Math.min(1.25, Math.max(0.85, sr / sp)) : 1;
       if (Math.abs(fator - 1) < 0.02) fator = 1;
       return { n: c.length, fator, erro: c.reduce((a, x) => a + Math.abs(x.real - x.prev), 0) / c.length, T };
     })();
@@ -1769,6 +1772,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   // 5) Sem dados para a conta (menos de 3 trechos, ou todos com a mistura quase igual), não devolve médias:
   //    devolve quantos tanques faltam.
   const RAZAO_ETA = 0.73;
+  const RESERVA = 0.1; // a luz da reserva acende com uns 10% do tanque
   const ETANOL_NA_GASOLINA = 0.30; // gasolina comum (C) no Brasil: 30% de etanol anidro desde agosto de 2025
   function mediasGasEta(trechos) {
     const hoje = Date.now();
@@ -2139,28 +2143,35 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     if (outro && pOutro && fd.kmlPor[outro] && ehFlex(car.combustivel)) eco = { outro, valor: (km * pOutro) / fd.kmlPor[outro] - total };
     return { km, porComb: out, total, eco };
   }
-  // ----- rendimento caindo -----
-  // O último tanque (dos últimos 30 dias) rendeu 10% ou mais abaixo do esperado para a mistura dele
-  // (fração × km/l de cada combustível; sem as duas médias, a mediana dos 5 tanques anteriores).
-  // Precisa de 4 tanques com mistura conhecida.
+  // ----- rendimento caindo (ou alto demais) -----
+  // Os 2 últimos tanques (o último dos últimos 30 dias) somados: km ÷ litros contra o esperado para a mistura de cada
+  // um (fração × km/l de cada combustível; sem as duas médias, a mediana dos 5 tanques anteriores). Dois tanques
+  // juntos tiram o vaivém de um tanque só (trânsito, ar-condicionado num dia quente). Avisa com 10% ou mais abaixo
+  // (ou o último sozinho 13% abaixo). Rendeu 15% ou mais acima: quase sempre é KM digitado errado ou tanque que
+  // não encheu, e o aviso pede para conferir. Precisa de 4 tanques com mistura conhecida.
   function rendimentoCaiu(car) {
     // trechos com GNV ou bateria ficam de fora: o que sobra no cilindro ou na bateria mexe demais no km/l do líquido
     const fd = fuelData(car.id), tr = fd.trechos.filter((f) => f.mix && !f.mixIncerto && !(f.foraKm > 0.05));
     if (tr.length < 4) return null;
-    const u = tr[tr.length - 1];
+    const u = tr[tr.length - 1], pr = tr[tr.length - 2];
     if (u.data < dStr(new Date(Date.now() - 30 * 864e5))) return null;
-    const temTodas = Object.keys(u.mix).every((c) => fd.kmlPor[c]);
-    const espDe = (f) => Object.entries(f.mix).reduce((a, [c, v]) => a + v * fd.kmlPor[c], 0);
-    let esp = temTodas ? espDe(u) : null;
-    if (!(esp > 0)) { const ant = tr.slice(-6, -1).map((f) => f.kml).sort((a, b) => a - b); esp = ant[ant.length >> 1]; }
-    const queda = 1 - u.kml / esp;
-    if (!(queda >= 0.1)) return null;
-    // o tanque anterior rendeu bem acima do normal: o "Enchi o tanque" de antes não encheu, e os litros que faltaram
-    // entraram neste. Não é o carro gastando mais
-    const pr = tr[tr.length - 2];
-    if (pr && Number(pr.km) === Number(u.kmIni) && Object.keys(pr.mix).every((c) => fd.kmlPor[c]) && pr.kml / espDe(pr) - 1 >= 0.08) return null;
+    const med = (() => { const ant = tr.slice(-7, -2).map((f) => f.kml).sort((a, b) => a - b); return ant[ant.length >> 1]; })();
+    const espDe = (f) => (Object.keys(f.mix).every((c) => fd.kmlPor[c]) ? Object.entries(f.mix).reduce((a, [c, v]) => a + v * fd.kmlPor[c], 0) : med);
+    const eu = espDe(u), ep = espDe(pr);
+    if (!(eu > 0) || !(ep > 0)) return null;
+    const dois = Number(pr.km) === Number(u.kmIni);
+    const rel1 = u.kml / eu, rel2 = dois ? (u.dist / eu + pr.dist / ep) / (u.litrosTrecho + pr.litrosTrecho) : rel1;
     const ini = fd.all.filter((f) => Number(f.km) === Number(u.kmIni) && f.litros > 0).pop();
-    return { queda, kml: u.kml, esp, data: u.data, posto: ini && ini.posto ? String(ini.posto).trim() : null, id: u.id };
+    const base = { kml: u.kml, esp: eu, data: u.data, posto: ini && ini.posto ? String(ini.posto).trim() : null, id: u.id, dois };
+    if (rel1 >= 1.15 && (!dois || rel2 >= 1.08)) return { ...base, alta: rel1 - 1 };
+    // o tanque anterior rendeu bem acima do normal e este abaixo: o "Enchi o tanque" de antes não encheu, e os
+    // litros que faltaram entraram neste. Não é o carro gastando mais
+    if (dois && pr.kml / ep - 1 >= 0.08 && rel1 < 1) return null;
+    // os 2 tanques juntos 10% ou mais abaixo; ou o último sozinho 13% abaixo (10%, sem o anterior para somar)
+    const q2 = dois ? 1 - rel2 : 0, q1 = 1 - rel1;
+    if (q2 >= 0.1) return { ...base, queda: q2, kml: (u.dist + pr.dist) / (u.litrosTrecho + pr.litrosTrecho), esp: (u.dist + pr.dist) / (u.dist / eu + pr.dist / ep), desde: pr.data };
+    if (q1 >= (dois ? 0.13 : 0.1)) return { ...base, queda: q1, um: true };
+    return null;
   }
   // ----- postos pelo rendimento -----
   // Cada tanque cheio foi abastecido no posto do abastecimento que abriu o trecho. Rendimento do posto =
@@ -2200,7 +2211,44 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       tem[w] += fonte ? fonte[ds] || 0 : ativo.has(ds) ? 1 : 0;
     }
     const fr = tot.map((n, i) => (n ? tem[i] / n : 0)), media = fr.reduce((a, b) => a + b, 0) / 7;
+    // Quem só anota no posto: os dias com abastecimento são amostras soltas, não o dia de trabalho, e o peso
+    // de cada dia seguia ao acaso os dias em que abasteceu (o tanque deixava de descontar dias inteiros rodados).
+    // Aqui o peso sai dos km entre um KM anotado e o seguinte (veja pesoPelosTrechos).
+    const trab = new Set([...S.dias.filter((d) => dentro(d.data)).map((d) => d.data),
+      ...S.lanc.filter((x) => x.tipo === "ganho" && x.trabalho && dentro(x.data)).map((x) => x.data)]);
+    if (!fonte && trab.size < 6) return pesoPelosTrechos(lim, fg, tem, tot);
     return media > 0 ? fr.map((v) => v / media) : null;
+  }
+  // Quem só anota no posto: qual costume explica melhor os km entre um KM anotado e o seguinte, rodar todo dia,
+  // folgar no domingo ou folgar no sábado e no domingo. Cada costume dá um ritmo por dia rodado (mínimos quadrados);
+  // fica o que erra menos, e uma folga só vale se errar pelo menos 10% menos que rodar todo dia (ou quase o mesmo,
+  // quando você nunca abasteceu nesses dias).
+  function pesoPelosTrechos(lim, fg, tem, tot) {
+    const cad = cadeiaKm(carAtivoId()).filter((p) => p.d >= lim);
+    const ts = [];
+    for (let i = 1; i < cad.length; i++) {
+      const c = Array(7).fill(0);
+      let dd = 0;
+      for (let x = new Date(cad[i - 1].d + "T12:00"); ;) {
+        x.setDate(x.getDate() + 1); const xs = dStr(x);
+        if (xs > cad[i].d) break;
+        if (!fg.has(xs) && !ehFeriado(xs)) { c[x.getDay()]++; dd++; }
+      }
+      if (dd && dd <= 10) ts.push({ km: cad[i].k - cad[i - 1].k, c, dd });
+    }
+    if (ts.length < 8) return null;
+    const hip = [[], [0], [6, 0]].map((off) => {
+      const dias = (t) => t.dd - off.reduce((a, w) => a + t.c[w], 0);
+      const sxy = ts.reduce((a, t) => a + t.km * dias(t), 0), sxx = ts.reduce((a, t) => a + dias(t) ** 2, 0);
+      const r = sxx > 0 ? sxy / sxx : 0;
+      return { off, ss: ts.reduce((a, t) => a + (t.km - r * dias(t)) ** 2, 0) };
+    });
+    // nunca abasteceu nos dias da folga (6 semanas ou mais) também conta a favor dela
+    const semPosto = (h) => h.off.every((w) => tem[w] === 0 && tot[w] >= 6);
+    const best = hip.slice(1).sort((a, b) => a.ss - b.ss)[0];
+    if (!(best.ss < (semPosto(best) ? 1.02 : 0.9) * hip[0].ss)) return null;
+    const on = 7 - best.off.length;
+    return Array.from({ length: 7 }, (_, w) => (best.off.includes(w) ? 0 : 7 / on));
   }
   function diasRestantesMes(ff = fatorFeriado()) {
     const h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate(), rest = N - h.getDate();
@@ -2292,8 +2340,9 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     // Quanto ainda roda com o que está no tanque: litros × km por litro da mistura (com a correção dos últimos
     // tanques), e em quantos dias isso acaba pelo seu ritmo, dia a dia a partir de amanhã, com o peso de cada dia da semana.
     let autKm = null, autDias = null;
-    if (kmlDe > 0 && litros > 0) {
-      autKm = (litros * kmlDe) / (fd.partLiq * aj.fator);
+    if (kmlDe > 0 && litros > RESERVA * T) {
+      // até a reserva (a luz acende com uns 10% do tanque), não até secar: ninguém roda até a pane seca
+      autKm = (Math.max(0, litros - RESERVA * T) * kmlDe) / (fd.partLiq * aj.fator);
       if (rk && !rk.estimativa && rk.kmDia > 0) {
         const peso = pesoDiasSemana(), ff = fatorFeriado(), h = new Date();
         let resta = autKm, n = 0;
@@ -2571,7 +2620,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       const fp = fatorPreco(car, pc.ck && pc.ck.porComb, dr), ep = fatorEpoca(car.id), k = k0 * ep;
       fpSoma += fp * pc.dia; fpPeso += pc.dia; epSoma += ep * pc.dia;
       const sim = t ? simulaAbast(car, t, pc, peso, k, fp, ff) : null;
-      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += Math.max(0, pc.dia * dr * k * fp - aj);
+      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += Math.max(0, pc.dia * dr * k * fp * ((fuelData(car.id).ajusteVazio || {}).fator || 1) - aj);
       // km por semana nas últimas 8 semanas (só semanas com KM antes e depois)
       const cad = cadeiaKm(car.id), sem = [];
       for (let k = 8; k >= 1; k--) {
@@ -3675,6 +3724,11 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 23, data: "2026-11-23", itens: [
+      "Contas do combustível revisadas com 300 carros simulados: o tanque desconta melhor os dias rodados depois do último abastecimento (e percebe a folga de domingo), e a autonomia agora vai até a reserva.",
+      "Aviso de rendimento pelos 2 últimos tanques (menos alarme falso), com “leve ao mecânico” quando a queda passa de 15%, e aviso novo quando um tanque rende demais (KM errado ou tanque que não encheu).",
+      "Previsão do mês já usa o consumo dos últimos tanques. Tudo recalculado com o que você já lançou.",
+    ] },
     { v: 22, data: "2026-11-23", itens: [
       "Campos sem número cinza que parecia preenchido (Separei, serviço, custos), com botão “Usar R$ X” onde ajuda.",
       "Histórico sem valor repetido em dia de um lançamento só; detalhes do tanque e aviso de KM mais curtos; aviso do iPhone só no Início.",

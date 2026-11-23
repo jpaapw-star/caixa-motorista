@@ -1212,6 +1212,21 @@ test("tanque que rendeu bem menos que o normal vira aviso", async ({ page }) => 
   await expect(a).toContainText("Posto Estrada");
 });
 
+test("tanque que rendeu demais pede para conferir o KM", async ({ page }) => {
+  const L = [];
+  let km = 10000;
+  for (let i = 0; i <= 6; i++) {
+    if (i > 0) km += i === 6 ? 640 : 480; // o último tanque fez 16 km/l, os outros 12: KM digitado errado
+    L.push({ data: dia(-35 + 5 * i), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + i });
+  }
+  await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 40 }] }));
+  await avisos(page);
+  const a = page.locator("#tab-inicio .alert", { hasText: "Rendimento alto demais" });
+  await expect(a).toContainText("acima do normal");
+  await expect(a).toContainText("Confira o KM");
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Rendimento caiu" })).toHaveCount(0);
+});
+
 test("postos ordenados pelo custo por km, com o quanto cada um rende", async ({ page }) => {
   // Posto A: R$ 6,00 e 12 km/l. Posto B: R$ 5,80 mas 10,5 km/l. Por km, o A sai mais barato.
   const L = [];
@@ -1393,6 +1408,6 @@ test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", as
   // 5 dias × 40 km = 200 km = 20 L: sobram 30 L de 50 (vazio 40%)
   await expect(tq).toContainText(/Vazio\s*40%\s*20,0 L/i);
   await expect(tq).toContainText("~200 km rodados");
-  // sobram 30 L a 10 km/l = 300 km; a 40 km por dia dá 7 dias e meio
-  await expect(tq.locator("#autonomia")).toHaveText("~7 dias · 300 km");
+  // sobram 30 L, 25 L até a reserva (10% do tanque) a 10 km/l = 250 km; a 40 km por dia dá 6 dias
+  await expect(tq.locator("#autonomia")).toHaveText("~6 dias · 250 km");
 });
