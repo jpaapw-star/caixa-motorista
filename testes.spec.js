@@ -494,8 +494,7 @@ test("Google Drive: salva na conta do motorista, salva sozinho depois e restaura
   await page.reload();
   await page.click("#tutPular");
   await aba(page, "resumo");
-  await page.click("#gSave");
-  await expect(page.locator("#toast")).toContainText("Ainda não há nada");
+  await expect(page.locator("#gSave")).toHaveCount(0); // vazio: nada para salvar, não aparece o botão
   expect(JSON.parse(drive.texto).colecoes.lancamentos).toHaveLength(3);
   await page.click("#bkLoad");
   await page.click("#gBusca");
@@ -1270,7 +1269,7 @@ test("Início mostra quanto cada km dá, custa e sobra, e o lucro previsto do m�
 
 test("lucro previsto desconta a parcela do carro que ainda não foi paga no mês", async ({ page, context }) => {
   const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 20, 15);
-  const prev = async (p) => Number((await p.locator(".placa-prev").first().innerText()).match(/~R\$\s([\d.]+),/)[1].replace(/\./g, ""));
+  const prev = async (p) => Number((await p.locator(".placa-prev").first().innerText()).match(/~R\$\s([\d.]+)/)[1].replace(/\./g, ""));
   await page.clock.setFixedTime(base);
   await abrir(page, dados({ lancamentos: meses70(base), carros: [{ id: "principal", tanque: 50, combustivel: "Flex" }] }));
   const sem = await prev(page);
@@ -1357,7 +1356,7 @@ test("tanque cheio confere o vazio previsto e corrige o gasto quando os últimos
   const L = [ab(-70, 10000, 50), ab(-60, 10480, 40), ab(-50, 10960, 40), ab(-40, 11440, 40), ab(-30, 11920, 44), ab(-20, 12400, 44), ab(-10, 12880, 44)];
   await abrir(page, dados({ lancamentos: L, carros: [{ id: "principal", tanque: 50 }] }));
   const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
-  await expect(tq).toContainText(/Nos últimos 5 tanques cheios, o vazio previsto errou em média [\d,]+ L/);
+  await expect(tq).toContainText(/Erro do vazio previsto: [\d,]+ L/);
   await expect(tq).toContainText(/gasto recente está \d+% acima das médias/);
   await aba(page, "carro");
   await parte(page, "consumo");
@@ -1393,7 +1392,7 @@ test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", as
   const tq = page.locator(".card", { hasText: "Mistura atual do tanque" });
   // 5 dias × 40 km = 200 km = 20 L: sobram 30 L de 50 (vazio 40%)
   await expect(tq).toContainText(/Vazio\s*40%\s*20,0 L/i);
-  await expect(tq).toContainText("−~200 km");
+  await expect(tq).toContainText("~200 km rodados");
   // sobram 30 L a 10 km/l = 300 km; a 40 km por dia dá 7 dias e meio
   await expect(tq.locator("#autonomia")).toHaveText("~7 dias · 300 km");
 });
