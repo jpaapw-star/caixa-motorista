@@ -236,23 +236,30 @@ def achar_arquivo():
         melhor = sorted(set(candidatos), key=fim_da_semana)[-1]
         # a página às vezes demora a mostrar as semanas novas: tenta pelo nome as semanas depois da mais nova dela
         fim = fim_da_semana(melhor)
+        n, achou = 0, False
         for k in range(1, 9):
             f = fim + timedelta(weeks=k)
             if f >= date.today():
                 break
             for url in urls_da_semana(f):
+                n += 1
                 if existe(url):
                     print("  achada pelo nome:", url)
-                    melhor = url
+                    melhor, achou = url, True
                     break
+        if n and not achou:
+            print("  busca pelo nome: %d endereços tentados, nenhum respondeu" % n)
         return melhor
     # a semana da ANP vai de domingo a sábado
     hoje = date.today()
     sabado = hoje - timedelta(days=(hoje.weekday() - 5) % 7 or 7)
+    n = 0
     for k in range(5):
         for url in urls_da_semana(sabado - timedelta(weeks=k)):
+            n += 1
             if existe(url):
                 return url
+    print("  busca pelo nome: %d endereços tentados, nenhum respondeu" % n)
     raise SystemExit("Não achei a planilha semanal da ANP. O site pode ter mudado.")
 
 
@@ -280,6 +287,7 @@ def urls_da_semana(fim):
 
 # o robô tem 10 minutos: passando de 7, para de procurar pelo nome e fica com o que já achou
 PRAZO = time.time() + 420
+_motivo_visto = False  # o motivo da recusa aparece uma vez só no registro
 
 
 def existe(url):
@@ -292,7 +300,11 @@ def existe(url):
             return r.status in (200, 206) and r.read(2) == b"PK"
     except urllib.error.HTTPError:
         return False
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        global _motivo_visto
+        if not _motivo_visto:
+            _motivo_visto = True
+            print("  o site recusou a conexão (%s)" % e)
         try:
             return _curl(url, primeiros_bytes=True)[:2] == b"PK"
         except Exception:  # noqa: BLE001
