@@ -172,25 +172,27 @@ def ler_planilha(conteudo):
     return estados, municipios, brasil.get("BR"), semana
 
 
-def _curl(url, so_cabecalho=False):
+def _curl(url, primeiros_bytes=False):
     """Mesmo pedido pelo curl: o site da ANP às vezes derruba a conexão do Python e aceita a do curl."""
     cmd = ["curl", "-sSfL", "--http1.1", "--retry", "3", "--retry-all-errors", "--retry-delay", "15",
            "--max-time", "120", "-A", CABECALHOS["User-Agent"], "-H", "Accept: */*", "-H", "Accept-Language: pt-BR,pt;q=0.9"]
-    if so_cabecalho:
-        cmd += ["-I", "-o", "/dev/null"]
-    return subprocess.run(cmd + [url], check=True, capture_output=True, timeout=600).stdout
+    if primeiros_bytes:
+        cmd = [c for c in cmd if c not in ("--retry-all-errors",)] + ["-r", "0-1023"]
+        cmd[cmd.index("--retry") + 1] = "1"
+        cmd[cmd.index("--max-time") + 1] = "30"
+    return subprocess.run(cmd + [url], check=True, capture_output=True, timeout=240).stdout
 
 
-def baixar(url, tentativas=4):
+def baixar(url, tentativas=2):
     for n in range(tentativas):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=CABECALHOS), timeout=90) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=CABECALHOS), timeout=60) as r:
                 return r.read()
         except Exception as e:  # noqa: BLE001
             print("  falhou (%s), tentando de novo…" % e)
             if n == tentativas - 1:
                 break
-            time.sleep(20 * (n + 1))
+            time.sleep(15)
     print("  tentando pelo curl…")
     return _curl(url)
 
@@ -220,20 +222,27 @@ def achar_arquivo():
     candidatos = []
     try:
         html = baixar(PAGINA).decode("utf-8", "ignore")
-        for href in re.findall(r'href="([^"]*resumo_semanal_lpc[^"]*\.xlsx)"', html, flags=re.I):
-            candidatos.append(urljoin(PAGINA, href))
+        # qualquer endereço com resumo_semanal_lpc…xlsx na página (aspas simples ou duplas, link relativo ou com
+        # "/@@download" no fim): a ANP já mudou o jeito do link e o robô ficou preso numa semana velha
+        pad = r'''[^"'<>\s]*resumo_semanal_lpc[^"'<>\s]*?\.xlsx'''
+        achados = re.findall(r'''href\s*=\s*["']?(%s)''' % pad, html, flags=re.I) + re.findall(r"(https?://%s)" % pad, html, flags=re.I)
+        for href in achados:
+            candidatos.append(urljoin(PAGINA, href.replace("&amp;", "&")))
+        print("Na página da ANP: %d planilhas semanais; a mais nova termina em %s" % (
+            len(set(candidatos)), max(map(fim_da_semana, candidatos)).isoformat() if candidatos else "—"))
     except Exception as e:  # noqa: BLE001
         print("Não consegui abrir a página da ANP (%s). Tentando pelo nome do arquivo." % e)
     if candidatos:
         melhor = sorted(set(candidatos), key=fim_da_semana)[-1]
         # a página às vezes demora a mostrar as semanas novas: tenta pelo nome as semanas depois da mais nova dela
         fim = fim_da_semana(melhor)
-        for k in range(1, 5):
+        for k in range(1, 9):
             f = fim + timedelta(weeks=k)
             if f >= date.today():
                 break
             for url in urls_da_semana(f):
                 if existe(url):
+                    print("  achada pelo nome:", url)
                     melhor = url
                     break
         return melhor
@@ -253,23 +262,39 @@ def url_da_semana(fim):
 
 
 def urls_da_semana(fim):
-    """Os dois jeitos de nome que a ANP já usou para a mesma semana."""
+    """Os jeitos de nome que a ANP já usou para a mesma semana ("2026-10-04_2026-10-10", "2026_10_18-2026_10_24",
+    "2026-08-30-2026-09-5"), com e sem zero na frente do dia e do mês."""
     ini = fim - timedelta(days=6)
-    sub = lambda d: d.isoformat().replace("-", "_")
-    return [url_da_semana(fim), "%s%d/resumo_semanal_lpc_%s-%s.xlsx" % (PASTA_ARQUIVOS, fim.year, sub(ini), sub(fim))]
+    def fmt(d, sep, zero):
+        return sep.join([str(d.year), "%02d" % d.month if zero else str(d.month), "%02d" % d.day if zero else str(d.day)])
+    nomes = []
+    for zero in (True, False):
+        for sep in ("-", "_"):
+            for meio in ("_", "-"):
+                n = "resumo_semanal_lpc_%s%s%s.xlsx" % (fmt(ini, sep, zero), meio, fmt(fim, sep, zero))
+                if n not in nomes:
+                    nomes.append(n)
+    pastas = [PASTA_ARQUIVOS + "%d/" % fim.year] + ([PASTA_ARQUIVOS + "%d/" % ini.year] if ini.year != fim.year else [])
+    return [p + n for p in pastas for n in nomes]
+
+
+# o robô tem 10 minutos: passando de 7, para de procurar pelo nome e fica com o que já achou
+PRAZO = time.time() + 420
 
 
 def existe(url):
+    """Pede só o começo do arquivo (o site da ANP pode recusar o pedido só de cabeçalho): planilha .xlsx começa com PK."""
+    if time.time() > PRAZO:
+        return False
     try:
-        req = urllib.request.Request(url, headers=CABECALHOS, method="HEAD")
+        req = urllib.request.Request(url, headers={**CABECALHOS, "Range": "bytes=0-1023"})
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status == 200
+            return r.status in (200, 206) and r.read(2) == b"PK"
     except urllib.error.HTTPError:
         return False
     except Exception:  # noqa: BLE001
         try:
-            _curl(url, so_cabecalho=True)
-            return True
+            return _curl(url, primeiros_bytes=True)[:2] == b"PK"
         except Exception:  # noqa: BLE001
             return False
 
@@ -301,7 +326,10 @@ def juntar_historico(antigo, semana, estados, municipios, baixar_antigas):
             if f.isoformat() in semanas:
                 continue
             try:
-                e, m, _, sem = ler_planilha(baixar(url_da_semana(f), tentativas=1))
+                url = next((u for u in urls_da_semana(f) if existe(u)), None)
+                if not url:
+                    raise ValueError("não achei o arquivo dela")
+                e, m, _, sem = ler_planilha(baixar(url, tentativas=1))
                 if len(e) >= 20:
                     semanas[f.isoformat()] = {"inicio": (f - timedelta(days=6)).isoformat(), "fim": f.isoformat(),
                                               "estados": resumo(e), "municipios": resumo(m)}
