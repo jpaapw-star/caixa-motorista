@@ -2542,8 +2542,8 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   }
   // ----- previsão pelos abastecimentos -----
   // A partir dos litros que estão no tanque agora, o app vai gastando dia a dia os km que você costuma rodar
-  // (pelo dia da semana) ÷ km por litro da sua mistura. Quando o tanque chega no nível em que você costuma
-  // abastecer (mediana dos últimos 10), entra um abastecimento com os litros que você costuma colocar (mediana),
+  // (pelo dia da semana) ÷ km por litro da sua mistura. Quando o tanque chega na reserva (ou antes, se você costuma
+  // abastecer com menos que isso), entra um abastecimento com os litros que você costuma colocar (mediana),
   // pelo preço por litro da sua mistura (preço por km × km por litro). Os abastecimentos até o fim do mês são o que falta pagar.
   function simulaAbast(car, t, pc, peso, k, fp = 1, ff = 1) {
     const fd = fuelData(car.id), rec = fd.all.filter((f) => f.litros > 0 && f.comb && !f.fora).slice(-10);
@@ -2555,6 +2555,9 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     // abastece na previsão só quando precisa: no nível de costume se ele já é a reserva ou menos; quem costuma abastecer
     // com o tanque pela metade não paga outro tanque no mês se o que tem dá até a reserva no fim do mês
     const gatilho = Math.min(Math.max(0, med(antes)), RESERVA * t.T), poe = Math.min(t.T - gatilho, med(litros));
+    // chegando na reserva, enche até o nível em que você costuma sair do posto (quem abastece com meio tanque
+    // e põe 25 L sai com o tanque quase cheio; vindo da reserva, põe mais litros para chegar lá)
+    const depois = rec.map((f) => f.nivelDepois).filter((v) => v != null), alvo = depois.length >= 3 ? Math.min(t.T, med(depois)) : null;
     if (!(poe > 1)) return null;
     const precoL = pc.ck.v * pc.ck.kmL * fp, h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate();
     const fv = (fd.ajusteVazio && fd.ajusteVazio.fator) || 1; // correção pelo que entrou nos últimos tanques cheios
@@ -2573,7 +2576,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       const d = new Date(h.getFullYear(), h.getMonth(), h.getDate() + i);
       nivel -= gasta(d, true);
       if (nivel <= gatilho) {
-        const l = Math.min(t.T - Math.max(0, nivel), poe);
+        const l = Math.min(t.T - Math.max(0, nivel), alvo != null && alvo - Math.max(0, nivel) > poe ? alvo - Math.max(0, nivel) : poe);
         nivel = Math.max(0, nivel) + l; valor += l * precoL;
         lista.push({ data: dStr(d), valor: l * precoL, car: car.id });
       }
@@ -2619,10 +2622,12 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       ajuste += aj;
       if (!pc) { bruto -= aj; falta -= aj; continue; }
       bruto += Math.max(0, pc.dia * dr - aj);
+      // o que falta pagar conta só o que precisa: o tanque pode descer até a reserva antes de abastecer
+      const sobra = t && t.preco > 0 ? Math.max(0, t.valor - RESERVA * t.T * t.preco) : Math.max(0, aj);
       const fp = fatorPreco(car, pc.ck && pc.ck.porComb, dr), ep = fatorEpoca(car.id), k = k0 * ep;
       fpSoma += fp * pc.dia; fpPeso += pc.dia; epSoma += ep * pc.dia;
       const sim = t ? simulaAbast(car, t, pc, peso, k, fp, ff) : null;
-      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += Math.max(0, pc.dia * dr * k * fp * ((fuelData(car.id).ajusteVazio || {}).fator || 1) - aj);
+      if (sim) { falta += sim.valor; abast.push(...sim.lista); porAbast = true; } else falta += Math.max(0, pc.dia * dr * k * fp * ((fuelData(car.id).ajusteVazio || {}).fator || 1) - sobra);
       // km por semana nas últimas 8 semanas (só semanas com KM antes e depois)
       const cad = cadeiaKm(car.id), sem = [];
       for (let k = 8; k >= 1; k--) {
@@ -3728,6 +3733,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   const NOVIDADES = [
     { v: 24, data: "2026-11-27", itens: [
       "Previsão do combustível só conta outro abastecimento se o tanque chegar na reserva antes do fim do mês. Se o que tem no tanque dá até lá, mostra “sem abastecer até o fim do mês”.",
+      "Quando o tanque chega na reserva, a previsão conta os litros para encher até o nível em que você costuma sair do posto. Revisado com 1000 carros simulados.",
     ] },
     { v: 23, data: "2026-11-23", itens: [
       "Contas do combustível revisadas com 300 carros simulados: o tanque desconta melhor os dias rodados depois do último abastecimento (e percebe a folga de domingo), e a autonomia agora vai até a reserva.",

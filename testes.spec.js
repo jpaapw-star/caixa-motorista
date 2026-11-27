@@ -965,11 +965,11 @@ test("previsão do mês desconta o combustível que já está no tanque", async 
   const d15 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
   const ab = (d, km) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + d });
   // 12 km/l, 48 km por dia, R$ 6,25: R$ 25 por dia. Encheu ontem: os 40 L (R$ 250) estão no tanque.
-  // De ontem para hoje rodou 48 km (pelo ritmo): sobram 36 L (R$ 225). Em média ficam 24 L (R$ 150) no tanque,
-  // então a previsão cai R$ 75 em relação a "gasto + R$ 25 por dia".
+  // De ontem para hoje rodou 48 km (pelo ritmo): sobram 36 L (R$ 225). Dá para rodar até a reserva (4 L, R$ 25)
+  // antes de abastecer, então a previsão cai R$ 200 em relação a "gasto + R$ 25 por dia".
   await abrir(page, dados({ lancamentos: [ab(-21, 10000), ab(-11, 10480), ab(-1, 10960)], carros: [{ id: "principal", tanque: 40 }] }));
   const N = new Date(y, mo, 0).getDate();
-  const esperado = 500 + 25 * (N - 15) - 75;
+  const esperado = 500 + Math.max(0, 25 * (N - 15) - 200);
   const brl = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   await expect(page.locator("#tab-inicio .cp-prev")).toHaveText(brl(esperado));
 });
