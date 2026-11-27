@@ -1320,6 +1320,13 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
         if (ex) alertas.push({ nome: "Confira um abastecimento" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Corrigir", kmfix: JSON.stringify({ t: "lanc", id: ex.id }),
           txt: `Em ${dBR(ex.data).slice(0, 5)} entraram ${num(ex.excede, 1)} L, mais que o tanque de ${num(c.tanque)} L. Confira os litros ou o tamanho do tanque em Editar carro.` });
       }
+      // tanque informado diferente do manual do modelo: o app não tem como descobrir sozinho (os litros que entram num
+      // tanque cheio não dependem do tamanho), e com o tanque maior que o real o "Até a reserva" fica otimista.
+      // Some quando o motorista salva o carro com o tamanho que ele conferiu.
+      const sugT = Number(c.tanque) > 0 && c.modelo ? tanqueSugerido(c.modelo, c.ano) : null;
+      if (sugT && Math.abs(Number(c.tanque) - sugT) >= 4 && c.tanqueConfere !== Number(c.tanque))
+        alertas.push({ nome: "Confira o tamanho do tanque" + (variosCarros() ? " · " + nomeCarro(c) : ""), st: "breve", lbl: "Conferir", tanqueCar: c.id,
+          txt: `Pelo manual, o ${c.modelo} tem ${num(sugT)} L. No app está ${num(c.tanque)} L.` });
       // o combustível que sai mais barato por km mudou: avisa por 3 dias (a primeira vez só guarda)
       const ec = !loading && S.loaded.s && ehFlex(c.combustivel) ? economia(c, {}) : null;
       if (ec && !ec.parecido && !ec.est) {
@@ -1369,7 +1376,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     const sAnt = temAnt ? stats(ymAnt) : null;
     const diaH = new Date().getDate(), antAte = temAnt && atualMes ? (() => { const L = S.lanc.filter((x) => (x.data || "").startsWith(ymAnt) && Number(x.data.slice(8, 10)) <= diaH); return sum(L.filter((x) => x.tipo === "ganho")) - sum(L.filter((x) => x.tipo === "gasto")); })() : null;
     const avPrim = alertas.slice(0, 1), avResto = alertas.slice(1);
-    const alertaBtn = (a) => `<button class="alert ${a.st}" ${a.kmfix ? `data-kmfix="${esc(a.kmfix)}"` : `data-goto="${a.tab || "carro"}"`}${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`;
+    const alertaBtn = (a) => `<button class="alert ${a.st}" ${a.kmfix ? `data-kmfix="${esc(a.kmfix)}"` : a.tanqueCar ? `data-tqcar="${esc(a.tanqueCar)}"` : `data-goto="${a.tab || "carro"}"`}${a.sub ? ` data-sub="${a.sub}"` : ""} data-gocar="${esc(a.car || "")}"><div><b>${esc(a.nome)}</b><span>${esc(a.txt)}</span></div><span class="pill ${a.st}">${esc(a.lbl)}</span></button>`;
     const temGanho = S.lanc.some((x) => x.tipo === "ganho");
     const resumoTrab = s.dias ? `<small class="num">${s.dias} ${s.dias === 1 ? "dia" : "dias"}${s.corridas ? " · " + num(s.corridas) + " corridas" : ""}</small>` : "";
 
@@ -1401,12 +1408,17 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
           const soComb = s.comb > 0 && Math.abs(s.comb - s.gastos) < 0.01, dd = atual ? new Date().getDate() : N;
           // mês atual com previsão: um quadro só, gasto até hoje × previsão, com a barra do quanto já foi
           if (atual && prev) {
-            const prox = pc.porAbast && pc.abast.length ? " · abastecer dia " + pc.abast[0].data.slice(8, 10) + "/" + pc.abast[0].data.slice(5, 7) : "";
+            // abastecimento previsto nos 2 últimos dias do mês pode ficar para o mês seguinte: "~" no dia
+            const ab0 = pc.porAbast && pc.abast.length ? pc.abast[0].data : null, perto = ab0 && Number(ab0.slice(8, 10)) >= N - 1;
+            const prox = ab0 ? " · abastecer " + (perto ? "~" : "dia ") + ab0.slice(8, 10) + "/" + ab0.slice(5, 7) : "";
+            // começo do mês ou faixa larga: o número é uma estimativa, vai arredondado com "~"
+            const aprox = new Date().getDate() <= 9 || (pc.faixa && pc.faixa[1] - pc.faixa[0] > prev * 0.15);
+            const prevTxt = aprox ? "~" + brl(Math.round(prev / 10) * 10).replace(/,00$/, "") : brl(prev);
             // previsão igual ao já gasto: sem abastecer até o fim do mês; um número só, sem barra cheia
             if (prev - s.comb < 1) return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
             <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">sem abastecer até o fim do mês</span></span></span></button>`;
             return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
-            <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">gasto até hoje</span></span><span class="cp-dir"><span class="v cp-prev">${brl(prev)}</span><span class="hint">previsão${prox}</span></span></span>
+            <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">gasto até hoje</span></span><span class="cp-dir"><span class="v cp-prev">${prevTxt}</span><span class="hint">previsão${prox}</span></span></span>
             <span class="cp-bar"><i style="width:${Math.min(100, (s.comb / prev) * 100).toFixed(1)}%"></i></span></button>`;
           }
           return `<button class="tile" data-calc="1"><span class="label">${soComb ? "Combustível por dia" : "Combustível no mês"}&nbsp;›</span><span class="v">${brl(soComb ? s.comb / dd : s.comb)}</span></button>
@@ -2232,7 +2244,8 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       for (let x = new Date(cad[i - 1].d + "T12:00"); ;) {
         x.setDate(x.getDate() + 1); const xs = dStr(x);
         if (xs > cad[i].d) break;
-        if (!fg.has(xs) && !ehFeriado(xs)) { c[x.getDay()]++; dd++; }
+        // feriado conta como dia comum: tirá-lo do trecho fazia os km dele caberem em menos dias e escondia a folga de domingo
+        if (!fg.has(xs)) { c[x.getDay()]++; dd++; }
       }
       if (dd && dd <= 10) ts.push({ km: cad[i].k - cad[i - 1].k, c, dd });
     }
@@ -3442,6 +3455,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   const tanqueSugerido = (nome, ano) => {
     const n = " " + semAcento(nome).replace(/[^a-z0-9]+/g, " ") + " ";
     if (/ pick up | cabine /.test(n) && !/ (strada|saveiro|toro|oroch|s10|hilux|ranger|amarok|frontier) /.test(n)) return null;
+    if (/ corolla /.test(n) && / (hybrid|hibrido) /.test(n)) return 43;
     const t = TANQUES.find(([k, , de, ate]) => n.includes(" " + k + " ") && (!de || !ano || ano >= de) && (!ate || !ano || ano <= ate));
     return t ? t[1] : null;
   };
@@ -3526,7 +3540,10 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       ${carroHTML()}
       <div class="fld"><span>Combustível</span><div class="chips">${TIPOS_CARRO.map((x) => `<button type="button" class="chip" data-cc="${x}" aria-pressed="${F.combustivel === x}">${x}</button>`).join("")}</div></div>
       <label class="fld"><span>Tamanho do tanque (litros)</span><input id="cT" inputmode="decimal" placeholder="Ex.: 44" value="${esc(F.tanqueTxt || "")}"></label>
-      ${achou() && P.tanqueSug ? `<p class="hint" style="margin:0">Sugestão para este modelo</p>` : ""}
+      ${achou() && P.tanqueSug ? `<p class="hint" style="margin:0">Sugestão para este modelo</p>` : (() => {
+        const sg = tanqueSugerido(F.modelo || "", intOrNull(F.ano)), tv = parseDec(F.tanqueTxt);
+        return sg && tv > 0 && Math.abs(tv - sg) >= 4 ? `<p class="hint" style="margin:0" id="tqManual">O manual deste modelo diz ${num(sg)} L</p>` : "";
+      })()}
       <p class="err" id="fErr"></p>
       <div class="sh-actions">${!novo && atual.id !== PRINCIPAL ? `<button type="button" class="btn ghost danger" id="fDel">Excluir carro</button><span class="spacer"></span>` : ""}<button type="button" class="btn ghost" id="fCancel">Cancelar</button><button type="button" class="btn primary" id="fSave"${S.offline ? " disabled" : ""}>${novo ? "Adicionar carro" : "Salvar"}</button></div>
     `, (draw, b) => {
@@ -3579,6 +3596,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
         const t = parseDec(F.tanqueTxt);
         if (String(F.tanqueTxt || "").trim() && !(t > 0 && t <= 200)) { err.textContent = "Digite o tanque em litros, por exemplo 44."; return; }
         doc.tanque = t > 0 ? Math.round(t * 10) / 10 : undefined;
+        doc.tanqueConfere = doc.tanque; // salvou conferindo o tamanho: o aviso de tanque diferente do manual some
         ev.target.disabled = true;
         try {
           if (novo) {
@@ -3734,6 +3752,8 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     { v: 24, data: "2026-11-27", itens: [
       "Previsão do combustível só conta outro abastecimento se o tanque chegar na reserva antes do fim do mês. Se o que tem no tanque dá até lá, mostra “sem abastecer até o fim do mês”.",
       "Quando o tanque chega na reserva, a previsão conta os litros para encher até o nível em que você costuma sair do posto. Revisado com 1000 carros simulados.",
+      "Aviso quando o tamanho do tanque no app é diferente do manual do modelo: com o tanque errado, o “Até a reserva” e a mistura erram.",
+      "O tanque desconta certo a folga de domingo mesmo quando houve feriado no meio. No começo do mês a previsão vem arredondada (~), porque ainda é estimativa.",
     ] },
     { v: 23, data: "2026-11-23", itens: [
       "Contas do combustível revisadas com 300 carros simulados: o tanque desconta melhor os dias rodados depois do último abastecimento (e percebe a folga de domingo), e a autonomia agora vai até a reserva.",
@@ -4524,6 +4544,11 @@ Regras: num print de ganhos, use o total ganho no período mostrado (com gorjeta
     if (!t) return;
     if (t.dataset.tab) { S.tab = t.dataset.tab; render(); window.scrollTo(0, 0); return; }
     if (t.dataset.kmfix) { corrigirKm(JSON.parse(t.dataset.kmfix)); return; }
+    if (t.dataset.tqcar) { // aviso do tamanho do tanque: abre Editar carro do carro certo
+      const id = t.dataset.tqcar;
+      (id !== carAtivoId() ? saveSettings({ carroAtivo: id }) : Promise.resolve()).catch(() => {}).then(() => fichaForm());
+      return;
+    }
     if (t.dataset.goto) {
       S.tab = t.dataset.goto; if (t.dataset.sub) S.carroSub = t.dataset.sub;
       if (t.dataset.gocar && t.dataset.gocar !== carAtivoId()) saveSettings({ carroAtivo: t.dataset.gocar }).catch(() => {});

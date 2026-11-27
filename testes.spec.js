@@ -1425,3 +1425,31 @@ test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", as
   // sobram 30 L, 25 L até a reserva (10% do tanque) a 10 km/l = 250 km; a 40 km por dia dá 6 dias
   await expect(tq.locator("#autonomia")).toHaveText("~6 dias · 250 km");
 });
+
+test("tanque informado diferente do manual: aviso abre Editar carro e some depois de salvar", async ({ page }) => {
+  const ab = (d, km) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 200, litros: 34, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-10, 10000), ab(-1, 10400)], carros: [{ id: "principal", modelo: "Chevrolet Onix 1.0", ano: 2021, tanque: 54 }] }));
+  await avisos(page);
+  const av = page.locator("#tab-inicio .alert", { hasText: "Confira o tamanho do tanque" });
+  await expect(av).toContainText("Pelo manual, o Chevrolet Onix 1.0 tem 44 L. No app está 54 L.");
+  await av.click();
+  await expect(page.locator("#tqManual")).toHaveText("O manual deste modelo diz 44 L");
+  await page.locator("#fSave").click();
+  await expect(page.locator("#sheet")).toBeHidden();
+  await page.click('[data-tab="inicio"]');
+  await avisos(page);
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira o tamanho do tanque" })).toHaveCount(0);
+});
+
+test("tanque igual ao manual não mostra aviso", async ({ page }) => {
+  await abrir(page, dados({ carros: [{ id: "principal", modelo: "Chevrolet Onix 1.0", ano: 2021, tanque: 44 }] }));
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira o tamanho do tanque" })).toHaveCount(0);
+});
+
+test("no começo do mês a previsão vem arredondada com ~", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 5, 15);
+  const d5 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  await page.clock.setFixedTime(base);
+  await abrir(page, dados({ lancamentos: quatroTanques(d5), carros: [{ id: "principal", tanque: 40 }] }));
+  await expect(page.locator("#tab-inicio .comb-prev .cp-prev")).toHaveText(/^~R\$\s[\d.]+$/);
+});
