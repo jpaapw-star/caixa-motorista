@@ -1390,7 +1390,7 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
       <div class="placa"><div class="placa-in">
         <div class="placa-top"><span class="label">Lucro em ${mes}</span></div>
         <div class="lucro num${loading ? "" : s.saldo < 0 ? " neg" : s.saldo > 0 ? " pos" : ""}">${loading ? "…" : brl(s.saldo)}</div>
-        <div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>
+        ${s.ganhos > 0 && s.gastos > 0 ? `<div class="placa-row num"><span>${ICON.up} Ganhos ${brl(s.ganhos)}</span><span>${ICON.down} Gastos ${brl(s.gastos)}</span></div>` : ""}
         ${lp != null ? `<div class="placa-prev num">Se continuar assim, fecha ${mes} com ~${brl(Math.round(lp / 10) * 10).replace(/,00$/, "")}</div>` : ""}
         ${antAte != null && !loading ? `<div class="placa-prev num" id="mesAnt">${diaH <= 5 && sAnt ? `${MES[Number(ymAnt.slice(5)) - 1][0].toUpperCase() + MES[Number(ymAnt.slice(5)) - 1].slice(1)} fechou com ${brl(sAnt.saldo)}` : `Mês passado até dia ${diaH}: ${brl(antAte)}`}</div>` : ""}
       </div></div>
@@ -1414,9 +1414,9 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
             // começo do mês ou faixa larga: o número é uma estimativa, vai arredondado com "~"
             const aprox = new Date().getDate() <= 9 || (pc.faixa && pc.faixa[1] - pc.faixa[0] > prev * 0.15);
             const prevTxt = aprox ? "~" + brl(Math.round(prev / 10) * 10).replace(/,00$/, "") : brl(prev);
-            // previsão igual ao já gasto: sem abastecer até o fim do mês; um número só, sem barra cheia
+            // previsão igual ao já gasto: o gasto já está no topo (lucro/gastos), aqui vai só a resposta, sem repetir o valor
             if (prev - s.comb < 1) return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
-            <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">sem abastecer até o fim do mês</span></span></span></button>`;
+            <span class="cp-row"><span><span class="v">Sem abastecer</span><span class="hint">o tanque dá até o fim do mês</span></span></span></button>`;
             return `<button class="tile comb-prev" data-prev="1"><span class="label">Combustível no mês&nbsp;›</span>
             <span class="cp-row"><span><span class="v">${brl(s.comb)}</span><span class="hint">gasto até hoje</span></span><span class="cp-dir"><span class="v cp-prev">${prevTxt}</span><span class="hint">previsão${prox}</span></span></span>
             <span class="cp-bar"><i style="width:${Math.min(100, (s.comb / prev) * 100).toFixed(1)}%"></i></span></button>`;
@@ -3749,8 +3749,11 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 25, data: "2026-11-27", itens: [
+      "Início sem números repetidos: a linha Ganhos/Gastos só aparece quando tem os dois, e o combustível mostra “Sem abastecer” em vez de repetir o valor já gasto.",
+    ] },
     { v: 24, data: "2026-11-27", itens: [
-      "Previsão do combustível só conta outro abastecimento se o tanque chegar na reserva antes do fim do mês. Se o que tem no tanque dá até lá, mostra “sem abastecer até o fim do mês”.",
+      "Previsão do combustível só conta outro abastecimento se o tanque chegar na reserva antes do fim do mês. Se o que tem no tanque dá até lá, mostra “Sem abastecer”.",
       "Quando o tanque chega na reserva, a previsão conta os litros para encher até o nível em que você costuma sair do posto. Revisado com 1000 carros simulados.",
       "Aviso quando o tamanho do tanque no app é diferente do manual do modelo: com o tanque errado, o “Até a reserva” e a mistura erram.",
       "O tanque desconta certo a folga de domingo mesmo quando houve feriado no meio. No começo do mês a previsão vem arredondada (~), porque ainda é estimativa.",

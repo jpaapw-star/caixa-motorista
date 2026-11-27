@@ -1046,7 +1046,11 @@ test("quem abastece com o tanque pela metade não paga outro tanque se o que tem
   // encheu há 2 dias: hoje tem ~32 L; em 4 dias gasta ~16 L e chega no fim do mês com ~16 L. Fica abaixo do nível
   // de costume (20 L), mas longe da reserva (4 L): não precisa abastecer
   const tile = page.locator("#tab-inicio .comb-prev");
-  await expect(tile).toContainText("sem abastecer até o fim do mês");
+  await expect(tile).toContainText("Sem abastecer");
+  await expect(tile).toContainText("o tanque dá até o fim do mês");
+  await expect(tile).not.toContainText("R$"); // o gasto já está no topo
+  // sem ganhos no mês: o lucro já é o gasto, a linha Ganhos/Gastos não repete
+  await expect(page.locator("#tab-inicio .placa-row")).toHaveCount(0);
   void d15;
 });
 
