@@ -2552,7 +2552,9 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
     const antes = rec.map((f) => f.nivelAntes).filter((v) => v != null), litros = rec.map((f) => Number(f.litros)).filter((v) => v > 0);
     if (antes.length < 3 || litros.length < 3 || !(pc.ck && pc.ck.kmL > 0)) return null;
     const med = (a) => { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-    const gatilho = Math.max(0, med(antes)), poe = Math.min(t.T - gatilho, med(litros));
+    // abastece na previsão só quando precisa: no nível de costume se ele já é a reserva ou menos; quem costuma abastecer
+    // com o tanque pela metade não paga outro tanque no mês se o que tem dá até a reserva no fim do mês
+    const gatilho = Math.min(Math.max(0, med(antes)), RESERVA * t.T), poe = Math.min(t.T - gatilho, med(litros));
     if (!(poe > 1)) return null;
     const precoL = pc.ck.v * pc.ck.kmL * fp, h = new Date(), N = new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate();
     const fv = (fd.ajusteVazio && fd.ajusteVazio.fator) || 1; // correção pelo que entrou nos últimos tanques cheios
@@ -3724,6 +3726,9 @@ body:not([data-tab="inicio"]) #iosInst { display: none; }
   // A cada atualização que o motorista deve conhecer, acrescente um item no começo de NOVIDADES com o próximo número (v).
   // Quem ficou tempo sem abrir vê todas as novidades que perdeu juntas, numa tela só.
   const NOVIDADES = [
+    { v: 24, data: "2026-11-27", itens: [
+      "Previsão do combustível só conta outro abastecimento se o tanque chegar na reserva antes do fim do mês. Se o que tem no tanque dá até lá, mostra “sem abastecer até o fim do mês”.",
+    ] },
     { v: 23, data: "2026-11-23", itens: [
       "Contas do combustível revisadas com 300 carros simulados: o tanque desconta melhor os dias rodados depois do último abastecimento (e percebe a folga de domingo), e a autonomia agora vai até a reserva.",
       "Aviso de rendimento pelos 2 últimos tanques (menos alarme falso), com “leve ao mecânico” quando a queda passa de 15%, e aviso novo quando um tanque rende demais (KM errado ou tanque que não encheu).",

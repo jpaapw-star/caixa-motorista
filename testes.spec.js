@@ -1036,6 +1036,20 @@ test("previsão do mês pelos abastecimentos que ainda cabem no mês", async ({ 
   await expect(tile).toContainText("abastecer dia 24/" + String(mo).padStart(2, "0"));
 });
 
+test("quem abastece com o tanque pela metade não paga outro tanque se o que tem dá até a reserva no fim do mês", async ({ page }) => {
+  const { y, mo, d15 } = dia15(page), N = new Date(y, mo, 0).getDate();
+  // hoje faltando 4 dias para o fim do mês; tanque de 40 L, 4 L por dia; sempre abastece com 20 L no tanque (20 L por vez)
+  const hoje = Date.UTC(y, mo - 1, N - 4, 15), d = (n) => new Date(hoje + n * 864e5).toISOString().slice(0, 10);
+  await page.clock.setFixedTime(hoje);
+  const ab = (n, i) => ({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 125, litros: 20, km: 10000 + 240 * i, ts: 100 + i });
+  await abrir(page, dados({ lancamentos: [-22, -17, -12, -7, -2].map(ab), carros: [{ id: "principal", tanque: 40 }] }));
+  // encheu há 2 dias: hoje tem ~32 L; em 4 dias gasta ~16 L e chega no fim do mês com ~16 L. Fica abaixo do nível
+  // de costume (20 L), mas longe da reserva (4 L): não precisa abastecer
+  const tile = page.locator("#tab-inicio .comb-prev");
+  await expect(tile).toContainText("sem abastecer até o fim do mês");
+  void d15;
+});
+
 test("previsão do mês aprende com o erro dos meses anteriores e guarda a de hoje", async ({ page }) => {
   const { base, d15, prevYm } = dia15(page);
   await page.clock.setFixedTime(base);
