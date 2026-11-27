@@ -965,11 +965,11 @@ test("previsão do mês desconta o combustível que já está no tanque", async 
   const d15 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
   const ab = (d, km) => ({ data: d15(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 250, litros: 40, km, ts: 100 + d });
   // 12 km/l, 48 km por dia, R$ 6,25: R$ 25 por dia. Encheu ontem: os 40 L (R$ 250) estão no tanque.
-  // De ontem para hoje rodou 48 km (pelo ritmo): sobram 36 L (R$ 225). Em média ficam 24 L (R$ 150) no tanque,
-  // então a previsão cai R$ 75 em relação a "gasto + R$ 25 por dia".
+  // De ontem para hoje rodou 48 km (pelo ritmo): sobram 36 L (R$ 225). Dá para rodar até a reserva (4 L, R$ 25)
+  // antes de abastecer, então a previsão cai R$ 200 em relação a "gasto + R$ 25 por dia".
   await abrir(page, dados({ lancamentos: [ab(-21, 10000), ab(-11, 10480), ab(-1, 10960)], carros: [{ id: "principal", tanque: 40 }] }));
   const N = new Date(y, mo, 0).getDate();
-  const esperado = 500 + 25 * (N - 15) - 75;
+  const esperado = 500 + Math.max(0, 25 * (N - 15) - 200);
   const brl = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   await expect(page.locator("#tab-inicio .cp-prev")).toHaveText(brl(esperado));
 });
@@ -1034,6 +1034,20 @@ test("previsão do mês pelos abastecimentos que ainda cabem no mês", async ({ 
   const tile = page.locator("#tab-inicio .comb-prev");
   await expect(tile.locator(".cp-prev")).toHaveText(brlT(750));
   await expect(tile).toContainText("abastecer dia 24/" + String(mo).padStart(2, "0"));
+});
+
+test("quem abastece com o tanque pela metade não paga outro tanque se o que tem dá até a reserva no fim do mês", async ({ page }) => {
+  const { y, mo, d15 } = dia15(page), N = new Date(y, mo, 0).getDate();
+  // hoje faltando 4 dias para o fim do mês; tanque de 40 L, 4 L por dia; sempre abastece com 20 L no tanque (20 L por vez)
+  const hoje = Date.UTC(y, mo - 1, N - 4, 15), d = (n) => new Date(hoje + n * 864e5).toISOString().slice(0, 10);
+  await page.clock.setFixedTime(hoje);
+  const ab = (n, i) => ({ data: d(n), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 125, litros: 20, km: 10000 + 240 * i, ts: 100 + i });
+  await abrir(page, dados({ lancamentos: [-22, -17, -12, -7, -2].map(ab), carros: [{ id: "principal", tanque: 40 }] }));
+  // encheu há 2 dias: hoje tem ~32 L; em 4 dias gasta ~16 L e chega no fim do mês com ~16 L. Fica abaixo do nível
+  // de costume (20 L), mas longe da reserva (4 L): não precisa abastecer
+  const tile = page.locator("#tab-inicio .comb-prev");
+  await expect(tile).toContainText("sem abastecer até o fim do mês");
+  void d15;
 });
 
 test("previsão do mês aprende com o erro dos meses anteriores e guarda a de hoje", async ({ page }) => {
@@ -1410,4 +1424,32 @@ test("sem KM novo desde o posto, o tanque e os km do mês seguem pelos dias", as
   await expect(tq).toContainText("~200 km rodados");
   // sobram 30 L, 25 L até a reserva (10% do tanque) a 10 km/l = 250 km; a 40 km por dia dá 6 dias
   await expect(tq.locator("#autonomia")).toHaveText("~6 dias · 250 km");
+});
+
+test("tanque informado diferente do manual: aviso abre Editar carro e some depois de salvar", async ({ page }) => {
+  const ab = (d, km) => ({ data: dia(d), tipo: "gasto", cat: "Combustível", comb: "Gasolina", cheio: true, valor: 200, litros: 34, km, ts: 100 + d });
+  await abrir(page, dados({ lancamentos: [ab(-10, 10000), ab(-1, 10400)], carros: [{ id: "principal", modelo: "Chevrolet Onix 1.0", ano: 2021, tanque: 54 }] }));
+  await avisos(page);
+  const av = page.locator("#tab-inicio .alert", { hasText: "Confira o tamanho do tanque" });
+  await expect(av).toContainText("Pelo manual, o Chevrolet Onix 1.0 tem 44 L. No app está 54 L.");
+  await av.click();
+  await expect(page.locator("#tqManual")).toHaveText("O manual deste modelo diz 44 L");
+  await page.locator("#fSave").click();
+  await expect(page.locator("#sheet")).toBeHidden();
+  await page.click('[data-tab="inicio"]');
+  await avisos(page);
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira o tamanho do tanque" })).toHaveCount(0);
+});
+
+test("tanque igual ao manual não mostra aviso", async ({ page }) => {
+  await abrir(page, dados({ carros: [{ id: "principal", modelo: "Chevrolet Onix 1.0", ano: 2021, tanque: 44 }] }));
+  await expect(page.locator("#tab-inicio .alert", { hasText: "Confira o tamanho do tanque" })).toHaveCount(0);
+});
+
+test("no começo do mês a previsão vem arredondada com ~", async ({ page }) => {
+  const [y, mo] = dia(0).split("-").map(Number), base = Date.UTC(y, mo - 1, 5, 15);
+  const d5 = (n) => new Date(base + n * 864e5).toISOString().slice(0, 10);
+  await page.clock.setFixedTime(base);
+  await abrir(page, dados({ lancamentos: quatroTanques(d5), carros: [{ id: "principal", tanque: 40 }] }));
+  await expect(page.locator("#tab-inicio .comb-prev .cp-prev")).toHaveText(/^~R\$\s[\d.]+$/);
 });
