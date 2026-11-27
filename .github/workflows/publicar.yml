@@ -1,7 +1,7 @@
 # Robô do RLCAR.
 # - Toda vez que você muda um arquivo: testa o app e, se passar, publica no GitHub Pages.
 # - Toda proposta de mudança (pull request): só testa, sem publicar, para você ver se está tudo certo antes do merge.
-# - Toda terça à noite e quinta de manhã: baixa o preço médio dos combustíveis da ANP, testa e publica.
+# - Todo dia, de manhã e à noite: baixa o preço médio dos combustíveis da ANP, testa e publica.
 # Se algo der errado, o GitHub manda um e-mail para você.
 name: Testar e publicar
 
@@ -11,8 +11,9 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "30 21 * * 2" # terça, 18h30 de Brasília (a ANP costuma publicar a semana nova na terça)
-    - cron: "30 12 * * 4" # quinta, 9h30 de Brasília (segunda tentativa)
+    # o site da ANP às vezes recusa o GitHub; tentando todo dia, a semana nova entra no primeiro dia em que ele deixar
+    - cron: "30 12 * * *" # todo dia, 9h30 de Brasília
+    - cron: "30 21 * * *" # todo dia, 18h30 de Brasília
   workflow_dispatch: # botão "Run workflow" na aba Actions
 
 permissions:
@@ -41,7 +42,7 @@ jobs:
       - run: pip install openpyxl==3.1.5
       - name: Baixar a pesquisa semanal da ANP
         # se o site da ANP ficar pendurado, desiste em 10 minutos para não segurar a publicação do app
-        run: timeout 600 python anp.py
+        run: timeout 600 python -u anp.py # -u: o que o robô viu aparece no registro mesmo se ele for parado
       - name: Guardar no repositório
         run: |
           git config user.name "github-actions[bot]"
@@ -132,7 +133,8 @@ jobs:
     #   needs: [android, iphone]
     #   if: ${{ !cancelled() && needs.android.result == 'success' && needs.iphone.result == 'success' && github.event_name != 'pull_request' }}
     needs: android
-    if: ${{ !cancelled() && needs.android.result == 'success' && github.event_name != 'pull_request' }}
+    # só publica o main: rodar o robô à mão num branch de teste não põe esse branch no ar
+    if: ${{ !cancelled() && needs.android.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
